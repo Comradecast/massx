@@ -159,8 +159,9 @@ When a resolved review is applied:
 - the machine-produced baseline values are preserved in `original_category`, `original_category_confidence`, and `original_selected_source_url`
 - non-empty overrides replace `category`, `category_confidence`, and/or `selected_source_url`
 - audit fields are populated: `review_applied`, `review_applied_fields`, `review_notes`, and `review_status`
+- `selected_source_overridden` marks whether `selected_source_url` was replaced by a resolved human review result
 
-`review_applied_fields` lists only the fields actually overridden, in deterministic order. Once a resolved review has been applied, that incident drops out of `human_review_queue.csv` on later runs even though the original machine review signals remain preserved in the enriched output.
+`review_applied_fields` lists only the fields actually overridden, in deterministic order. When `review_applied` is true and `review_applied_fields` is empty, the incident was reviewed and resolved without changing the machine-produced values. Once a resolved review has been applied, that incident drops out of `human_review_queue.csv` on later runs even though the original machine review signals remain preserved in the enriched output.
 
 ## Classification Categories
 

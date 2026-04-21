@@ -372,6 +372,7 @@ def test_resolved_category_override_applied_and_removed_from_review_queue(tmp_pa
     assert enriched.loc[0, "category"] == "domestic_family"
     assert enriched.loc[0, "original_category_confidence"] == 0.0
     assert enriched.loc[0, "original_selected_source_url"] == "https://example.com/story-hr1"
+    assert bool(enriched.loc[0, "selected_source_overridden"]) is False
     assert bool(enriched.loc[0, "review_applied"]) is True
     assert enriched.loc[0, "review_applied_fields"] == "category"
     assert enriched.loc[0, "review_notes"] == "Reviewed by analyst"
@@ -423,6 +424,7 @@ def test_resolved_source_override_applied(tmp_path: Path) -> None:
     enriched = pd.read_csv(output_dir / "enriched_incidents.csv")
 
     assert enriched.loc[0, "original_selected_source_url"] == "https://example.com/story-hr2"
+    assert bool(enriched.loc[0, "selected_source_overridden"]) is True
     assert enriched.loc[0, "selected_source_url"] == "https://override.example.com/story-hr2"
     assert enriched.loc[0, "review_applied_fields"] == "selected_source_url"
 
@@ -471,6 +473,7 @@ def test_resolved_confidence_override_applied(tmp_path: Path) -> None:
     enriched = pd.read_csv(output_dir / "enriched_incidents.csv")
 
     assert enriched.loc[0, "original_category_confidence"] == 0.0
+    assert bool(enriched.loc[0, "selected_source_overridden"]) is False
     assert enriched.loc[0, "category_confidence"] == 0.99
     assert enriched.loc[0, "review_applied_fields"] == "category_confidence"
 
@@ -520,6 +523,7 @@ def test_unresolved_human_review_does_not_apply(tmp_path: Path) -> None:
     review_queue = pd.read_csv(output_dir / "human_review_queue.csv")
 
     assert bool(enriched.loc[0, "review_applied"]) is False
+    assert bool(enriched.loc[0, "selected_source_overridden"]) is False
     assert pd.isna(enriched.loc[0, "review_applied_fields"]) or enriched.loc[0, "review_applied_fields"] == ""
     assert pd.isna(enriched.loc[0, "review_status"])
     assert enriched.loc[0, "category"] == "unknown"

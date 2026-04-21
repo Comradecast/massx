@@ -365,6 +365,7 @@ def _build_human_review_queue(enriched_frame: pd.DataFrame) -> pd.DataFrame:
         "original_category",
         "original_category_confidence",
         "selected_source_url",
+        "selected_source_overridden",
         "original_selected_source_url",
         "selected_source_origin",
         "source_candidates_count",
@@ -488,6 +489,7 @@ def _apply_human_review_result(
         "original_category": original_category,
         "original_category_confidence": original_category_confidence,
         "original_selected_source_url": original_selected_source_url,
+        "selected_source_overridden": False,
         "review_applied": False,
         "review_applied_fields": "",
         "review_notes": "",
@@ -505,6 +507,7 @@ def _apply_human_review_result(
         applied_fields.append("category_confidence")
     if human_review_result.source_override is not None:
         row["selected_source_url"] = human_review_result.source_override
+        overrides["selected_source_overridden"] = True
         applied_fields.append("selected_source_url")
 
     overrides["review_applied"] = True
