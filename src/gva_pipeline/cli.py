@@ -30,6 +30,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional path to manual review CSV. Defaults to data/manual_reviews.csv when present.",
     )
     run_parser.add_argument(
+        "--human-review-results",
+        default=None,
+        help="Optional path to human_review_results.csv for resolved category/source overrides.",
+    )
+    run_parser.add_argument(
         "--save-html",
         action="store_true",
         help="Save fetched raw HTML to output-dir/raw_html.",
@@ -92,6 +97,7 @@ def main(argv: list[str] | None = None) -> int:
                 input_path=args.input,
                 output_dir=args.output_dir,
                 manual_review_path=args.manual_review_file,
+                human_review_results_path=args.human_review_results,
                 save_html=args.save_html,
                 write_excel_autofit=args.excel_autofit,
                 timeout_seconds=args.timeout_seconds,

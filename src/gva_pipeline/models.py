@@ -19,6 +19,16 @@ class ManualReviewRecord:
 
 
 @dataclass(slots=True)
+class HumanReviewResultRecord:
+    incident_id: str
+    review_status: str
+    final_category: str | None = None
+    final_confidence: float | None = None
+    notes: str | None = None
+    source_override: str | None = None
+
+
+@dataclass(slots=True)
 class IncidentRecord:
     incident_id: str
     incident_date: date | None

@@ -53,6 +53,12 @@ Optional Excel companion exports with auto-fit columns:
 python -m gva_pipeline.cli --input data/incidents_canonical.csv --output-dir out --excel-autofit
 ```
 
+Optional resolved human review overrides:
+
+```bash
+python -m gva_pipeline.cli --input data/incidents_canonical.csv --output-dir out --human-review-results data/human_review_results.csv
+```
+
 ## How To Acquire Enriched GVA Data
 
 The recommended workflow is:
@@ -137,6 +143,24 @@ Each enriched incident row now includes deterministic review metadata so review 
 - `needs_source_review`: whether any source-review rule fired
 
 `human_review_queue.csv` contains only rows where `review_required` is true. The queue is sorted by highest `review_priority` first, then newest `incident_date`, then `incident_id`.
+
+## Human Review Results
+
+You can optionally apply resolved human review outcomes with `--human-review-results`. The CSV schema must be exactly:
+
+```csv
+incident_id,review_status,final_category,final_confidence,notes,source_override
+```
+
+Only rows where `review_status` is exactly `resolved` are applied, and matching is exact by `incident_id`.
+
+When a resolved review is applied:
+
+- the machine-produced baseline values are preserved in `original_category`, `original_category_confidence`, and `original_selected_source_url`
+- non-empty overrides replace `category`, `category_confidence`, and/or `selected_source_url`
+- audit fields are populated: `review_applied`, `review_applied_fields`, `review_notes`, and `review_status`
+
+`review_applied_fields` lists only the fields actually overridden, in deterministic order. Once a resolved review has been applied, that incident drops out of `human_review_queue.csv` on later runs even though the original machine review signals remain preserved in the enriched output.
 
 ## Classification Categories
 

@@ -386,6 +386,33 @@ def test_cli_passes_heartbeat_and_verbose_lifecycle(monkeypatch: pytest.MonkeyPa
     assert captured["verbose_lifecycle"] is True
 
 
+def test_cli_passes_human_review_results_path(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    captured: dict[str, object] = {}
+    input_path = tmp_path / "input.csv"
+    output_dir = tmp_path / "out"
+    review_results_path = tmp_path / "human_review_results.csv"
+    input_path.write_text("", encoding="utf-8")
+
+    def fake_run_pipeline(**kwargs: object) -> None:
+        captured.update(kwargs)
+
+    monkeypatch.setattr(cli, "run_pipeline", fake_run_pipeline)
+
+    exit_code = cli.main(
+        [
+            "--input",
+            str(input_path),
+            "--output-dir",
+            str(output_dir),
+            "--human-review-results",
+            str(review_results_path),
+        ]
+    )
+
+    assert exit_code == 0
+    assert captured["human_review_results_path"] == str(review_results_path)
+
+
 def test_readme_usage_examples_point_to_canonical_input() -> None:
     readme_text = Path("README.md").read_text(encoding="utf-8")
 
@@ -584,7 +611,10 @@ def test_human_review_queue_sorts_by_priority_then_newest_date_then_incident_id(
                     "victims_injured": 4,
                     "category": "unknown",
                     "category_confidence": 0.0,
+                    "original_category": "unknown",
+                    "original_category_confidence": 0.0,
                     "selected_source_url": "https://example.com/a",
+                    "original_selected_source_url": "https://example.com/a",
                     "selected_source_origin": "original",
                     "source_candidates_count": 1,
                     "source_attempt_count": 1,
@@ -607,6 +637,10 @@ def test_human_review_queue_sorts_by_priority_then_newest_date_then_incident_id(
                     "suspect_gender": "unknown",
                     "suspect_race": "unknown",
                     "suspect_demographics_snippet": "",
+                    "review_applied": False,
+                    "review_applied_fields": "",
+                    "review_notes": "",
+                    "review_status": "",
                     "review_required": True,
                     "review_reason": "unknown_category",
                     "review_priority": 80,
@@ -623,7 +657,10 @@ def test_human_review_queue_sorts_by_priority_then_newest_date_then_incident_id(
                     "victims_injured": 4,
                     "category": "party_social_event",
                     "category_confidence": 0.88,
+                    "original_category": "party_social_event",
+                    "original_category_confidence": 0.88,
                     "selected_source_url": "https://example.com/b",
+                    "original_selected_source_url": "https://example.com/b",
                     "selected_source_origin": "original",
                     "source_candidates_count": 1,
                     "source_attempt_count": 1,
@@ -646,6 +683,10 @@ def test_human_review_queue_sorts_by_priority_then_newest_date_then_incident_id(
                     "suspect_gender": "unknown",
                     "suspect_race": "unknown",
                     "suspect_demographics_snippet": "",
+                    "review_applied": False,
+                    "review_applied_fields": "",
+                    "review_notes": "",
+                    "review_status": "",
                     "review_required": True,
                     "review_reason": "fetch_failed",
                     "review_priority": 100,
@@ -662,7 +703,10 @@ def test_human_review_queue_sorts_by_priority_then_newest_date_then_incident_id(
                     "victims_injured": 4,
                     "category": "party_social_event",
                     "category_confidence": 0.88,
+                    "original_category": "party_social_event",
+                    "original_category_confidence": 0.88,
                     "selected_source_url": "https://example.com/c",
+                    "original_selected_source_url": "https://example.com/c",
                     "selected_source_origin": "original",
                     "source_candidates_count": 1,
                     "source_attempt_count": 1,
@@ -685,6 +729,10 @@ def test_human_review_queue_sorts_by_priority_then_newest_date_then_incident_id(
                     "suspect_gender": "unknown",
                     "suspect_race": "unknown",
                     "suspect_demographics_snippet": "",
+                    "review_applied": False,
+                    "review_applied_fields": "",
+                    "review_notes": "",
+                    "review_status": "",
                     "review_required": True,
                     "review_reason": "fetch_failed",
                     "review_priority": 100,
@@ -771,6 +819,13 @@ def test_pipeline_output_preserves_core_schema_and_adds_acquisition_fields(tmp_p
         "review_priority",
         "needs_category_review",
         "needs_source_review",
+        "original_category",
+        "original_category_confidence",
+        "original_selected_source_url",
+        "review_applied",
+        "review_applied_fields",
+        "review_notes",
+        "review_status",
     }
     assert expected_columns.issubset(set(enriched.columns))
     assert {"fetch_request_domain", "fetch_final_domain", "fetch_domain_changed"}.issubset(set(enriched.columns))

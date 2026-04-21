@@ -22,7 +22,7 @@ from pathlib import Path
 import pandas as pd
 
 from .io_utils import clean_optional_str, normalize_whitespace, parse_source_candidates_value
-from .models import IncidentRecord, ManualReviewRecord
+from .models import HumanReviewResultRecord, IncidentRecord, ManualReviewRecord
 
 VALID_DECISION_TYPES = {
     "add_source_candidates",
@@ -32,6 +32,14 @@ VALID_DECISION_TYPES = {
     "mark_irrelevant_incident",
     "needs_more_research",
 }
+HUMAN_REVIEW_RESULTS_COLUMNS = [
+    "incident_id",
+    "review_status",
+    "final_category",
+    "final_confidence",
+    "notes",
+    "source_override",
+]
 
 
 def get_default_manual_review_path() -> Path:
@@ -82,6 +90,48 @@ def read_manual_reviews_csv(path: str | Path) -> dict[str, ManualReviewRecord]:
         )
 
     return reviews
+
+
+def read_human_review_results_csv(path: str | Path) -> dict[str, HumanReviewResultRecord]:
+    frame = pd.read_csv(path, dtype=str, keep_default_na=False)
+    found_columns = list(frame.columns)
+    if found_columns != HUMAN_REVIEW_RESULTS_COLUMNS:
+        missing_columns = [column for column in HUMAN_REVIEW_RESULTS_COLUMNS if column not in found_columns]
+        unexpected_columns = [column for column in found_columns if column not in HUMAN_REVIEW_RESULTS_COLUMNS]
+        raise ValueError(
+            "Human review results file must have exactly these columns: "
+            f"{', '.join(HUMAN_REVIEW_RESULTS_COLUMNS)}. "
+            f"Missing columns: {', '.join(missing_columns) or 'none'}. "
+            f"Unexpected columns: {', '.join(unexpected_columns) or 'none'}. "
+            f"Found columns: {', '.join(found_columns)}."
+        )
+
+    resolved_reviews: dict[str, HumanReviewResultRecord] = {}
+    for row in frame.to_dict(orient="records"):
+        review_status = normalize_whitespace(str(row.get("review_status", "")))
+        if review_status != "resolved":
+            continue
+
+        incident_id = normalize_whitespace(str(row.get("incident_id", "")))
+        if not incident_id:
+            raise ValueError("Human review results file has a resolved row with a blank incident_id")
+        if incident_id in resolved_reviews:
+            raise ValueError(f"Human review results file contains duplicate resolved incident_id: {incident_id}")
+
+        final_confidence = _parse_review_confidence(
+            row.get("final_confidence"),
+            incident_id=incident_id,
+        )
+        resolved_reviews[incident_id] = HumanReviewResultRecord(
+            incident_id=incident_id,
+            review_status=review_status,
+            final_category=clean_optional_str(row.get("final_category")),
+            final_confidence=final_confidence,
+            notes=clean_optional_str(row.get("notes")),
+            source_override=clean_optional_str(row.get("source_override")),
+        )
+
+    return resolved_reviews
 
 
 def attach_manual_reviews(
@@ -135,3 +185,15 @@ def _parse_manual_review_url_list(
             )
         return parse_source_candidates_value(text)
     return parse_source_candidates_value(text)
+
+
+def _parse_review_confidence(value: object, *, incident_id: str) -> float | None:
+    text = clean_optional_str(value)
+    if text is None:
+        return None
+    try:
+        return float(text)
+    except ValueError as exc:
+        raise ValueError(
+            f"Human review results for incident_id={incident_id} has invalid final_confidence: {text}"
+        ) from exc

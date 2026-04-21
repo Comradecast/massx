@@ -20,8 +20,13 @@ from .io_utils import (
     serialize_value,
     write_json_records,
 )
-from .manual_reviews import attach_manual_reviews, get_default_manual_review_path, read_manual_reviews_csv
-from .models import FetchResult, IncidentAcquisitionResult, PipelineReport
+from .manual_reviews import (
+    attach_manual_reviews,
+    get_default_manual_review_path,
+    read_human_review_results_csv,
+    read_manual_reviews_csv,
+)
+from .models import FetchResult, HumanReviewResultRecord, IncidentAcquisitionResult, PipelineReport
 from .source_policy import extract_source_domain
 from .source_acquisition import acquire_incident_sources
 
@@ -107,6 +112,7 @@ def _record_to_output(
     acquisition_result: IncidentAcquisitionResult,
     article_text: str,
     html_path: Path | None,
+    human_review_result: HumanReviewResultRecord | None = None,
 ) -> dict[str, object]:
     fetch_result = acquisition_result.fetch_result
     context_flags = extract_context_flags(article_text)
@@ -166,6 +172,7 @@ def _record_to_output(
         "suspect_demographics_snippet": demographics.suspect_demographics_snippet,
     }
     output_record.update(_build_review_metadata(output_record))
+    output_record.update(_apply_human_review_result(output_record, human_review_result))
 
     return output_record
 
@@ -335,7 +342,9 @@ def _build_review_metadata(row: dict[str, object]) -> dict[str, object]:
 
 def _build_human_review_queue(enriched_frame: pd.DataFrame) -> pd.DataFrame:
     review_frame = enriched_frame.copy()
-    review_frame = review_frame[review_frame["review_required"].fillna(False)].copy()
+    review_frame = review_frame[
+        review_frame["review_required"].fillna(False) & ~review_frame["review_applied"].fillna(False)
+    ].copy()
     review_frame["incident_date_sort"] = pd.to_datetime(review_frame["incident_date"], errors="coerce")
     review_frame = review_frame.sort_values(
         ["review_priority", "incident_date_sort", "incident_id"],
@@ -353,7 +362,10 @@ def _build_human_review_queue(enriched_frame: pd.DataFrame) -> pd.DataFrame:
         "victims_injured",
         "category",
         "category_confidence",
+        "original_category",
+        "original_category_confidence",
         "selected_source_url",
+        "original_selected_source_url",
         "selected_source_origin",
         "source_candidates_count",
         "source_attempt_count",
@@ -376,6 +388,10 @@ def _build_human_review_queue(enriched_frame: pd.DataFrame) -> pd.DataFrame:
         "suspect_gender",
         "suspect_race",
         "suspect_demographics_snippet",
+        "review_applied",
+        "review_applied_fields",
+        "review_notes",
+        "review_status",
         "review_required",
         "review_reason",
         "review_priority",
@@ -460,11 +476,50 @@ def _build_domain_fetch_summary(enriched_frame: pd.DataFrame) -> pd.DataFrame:
     return summary.sort_values(["incident_count", "source_domain"], ascending=[False, True]).reset_index(drop=True)
 
 
+def _apply_human_review_result(
+    row: dict[str, object],
+    human_review_result: HumanReviewResultRecord | None,
+) -> dict[str, object]:
+    original_category = row.get("category")
+    original_category_confidence = row.get("category_confidence")
+    original_selected_source_url = row.get("selected_source_url")
+
+    overrides: dict[str, object] = {
+        "original_category": original_category,
+        "original_category_confidence": original_category_confidence,
+        "original_selected_source_url": original_selected_source_url,
+        "review_applied": False,
+        "review_applied_fields": "",
+        "review_notes": "",
+        "review_status": "",
+    }
+    if human_review_result is None:
+        return overrides
+
+    applied_fields: list[str] = []
+    if human_review_result.final_category is not None:
+        row["category"] = human_review_result.final_category
+        applied_fields.append("category")
+    if human_review_result.final_confidence is not None:
+        row["category_confidence"] = human_review_result.final_confidence
+        applied_fields.append("category_confidence")
+    if human_review_result.source_override is not None:
+        row["selected_source_url"] = human_review_result.source_override
+        applied_fields.append("selected_source_url")
+
+    overrides["review_applied"] = True
+    overrides["review_applied_fields"] = "|".join(applied_fields)
+    overrides["review_notes"] = human_review_result.notes or ""
+    overrides["review_status"] = human_review_result.review_status
+    return overrides
+
+
 def run_pipeline(
     *,
     input_path: str | Path,
     output_dir: str | Path,
     manual_review_path: str | Path | None = None,
+    human_review_results_path: str | Path | None = None,
     save_html: bool = False,
     write_excel_autofit: bool = False,
     timeout_seconds: float = 8.0,
@@ -484,6 +539,14 @@ def run_pipeline(
     manual_reviews_by_incident_id = (
         read_manual_reviews_csv(resolved_manual_review_path)
         if resolved_manual_review_path.exists()
+        else {}
+    )
+    resolved_human_review_results_path = Path(human_review_results_path) if human_review_results_path else None
+    if resolved_human_review_results_path and not resolved_human_review_results_path.exists():
+        raise ValueError(f"Human review results file does not exist: {resolved_human_review_results_path}")
+    human_review_results_by_incident_id = (
+        read_human_review_results_csv(resolved_human_review_results_path)
+        if resolved_human_review_results_path and resolved_human_review_results_path.exists()
         else {}
     )
     if manual_reviews_by_incident_id:
@@ -526,6 +589,11 @@ def run_pipeline(
             f"Loaded {len(manual_reviews_by_incident_id)} manual review record(s) from "
             f"{resolved_manual_review_path}"
         )
+    if human_review_results_by_incident_id and resolved_human_review_results_path:
+        _log(
+            f"Loaded {len(human_review_results_by_incident_id)} resolved human review result(s) from "
+            f"{resolved_human_review_results_path}"
+        )
     if limit is not None:
         _log(f"Limit mode active: processing first {total_incidents} incident(s)")
     heartbeat_thread.start()
@@ -566,7 +634,15 @@ def run_pipeline(
                 html_path = save_raw_html(fetch_result, html_directory, incident_id=incident.incident_id)
 
             article_text = fetch_result.article_text or ""
-            enriched_records.append(_record_to_output(incident, acquisition_result, article_text, html_path))
+            enriched_records.append(
+                _record_to_output(
+                    incident,
+                    acquisition_result,
+                    article_text,
+                    html_path,
+                    human_review_results_by_incident_id.get(incident.incident_id),
+                )
+            )
 
             if not fetch_result.ok:
                 acquisition_status, failure_stage, failure_reason = _coalesce_failure_metadata(fetch_result)
