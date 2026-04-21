@@ -129,6 +129,7 @@ The pipeline writes:
 - `summary_demographics.csv`
 - `fetch_failures.csv`
 - `human_review_queue.csv`
+- `domain_review_summary.csv`
 
 When `--excel-autofit` is enabled, it also writes `.xlsx` companions for each CSV output with Excel-friendly column widths. This is the closest automated equivalent to using `Alt`, `H`, `O`, `I` after opening the file in Excel. The CSV files themselves remain plain text and cannot store column widths.
 
@@ -143,6 +144,34 @@ Each enriched incident row now includes deterministic review metadata so review 
 - `needs_source_review`: whether any source-review rule fired
 
 `human_review_queue.csv` contains only rows where `review_required` is true. The queue is sorted by highest `review_priority` first, then newest `incident_date`, then `incident_id`.
+
+## Domain Review Summary
+
+`domain_review_summary.csv` shows which source domains are generating the most review and fetch friction after final override application. It groups enriched incidents by:
+
+1. `source_domain` when present
+2. otherwise `fetch_request_domain` when present
+3. otherwise `unknown`
+
+Metrics are built from final enriched rows after human review override application:
+
+- `total_incidents`
+- `fetched_ok_count`
+- `fetch_failed_count`
+- `no_article_text_count`
+- `review_required_count`
+- `review_applied_count`
+- `category_override_count`
+- `confidence_override_count`
+- `source_override_count`
+- `selected_source_overridden_count`
+- `unknown_category_count`
+- `fetch_failure_rate`
+- `review_required_rate`
+- `review_applied_rate`
+- `source_override_rate`
+
+Use this summary to spot high-friction domains, especially those with high review-required counts, repeated fetch failures, and frequent source/category overrides.
 
 ## Human Review Results
 
@@ -162,6 +191,22 @@ When a resolved review is applied:
 - `selected_source_overridden` marks whether `selected_source_url` was replaced by a resolved human review result
 
 `review_applied_fields` lists only the fields actually overridden, in deterministic order. When `review_applied` is true and `review_applied_fields` is empty, the incident was reviewed and resolved without changing the machine-produced values. Once a resolved review has been applied, that incident drops out of `human_review_queue.csv` on later runs even though the original machine review signals remain preserved in the enriched output.
+
+## Reviewer UI
+
+For local review entry, launch the Streamlit reviewer app against an existing queue and results file path:
+
+```bash
+streamlit run scripts/review_ui.py -- --queue out/human_review_queue.csv --results data/human_review_results.csv
+```
+
+The app reads `human_review_queue.csv`, optionally loads existing `human_review_results.csv`, and saves edits back using the exact required schema:
+
+```csv
+incident_id,review_status,final_category,final_confidence,notes,source_override
+```
+
+If the results file does not exist yet, the app creates it with that exact header before saving.
 
 ## Classification Categories
 

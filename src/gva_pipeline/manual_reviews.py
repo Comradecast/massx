@@ -23,6 +23,7 @@ import pandas as pd
 
 from .io_utils import clean_optional_str, normalize_whitespace, parse_source_candidates_value
 from .models import HumanReviewResultRecord, IncidentRecord, ManualReviewRecord
+from .review_results_io import read_human_review_results_frame
 
 VALID_DECISION_TYPES = {
     "add_source_candidates",
@@ -32,16 +33,6 @@ VALID_DECISION_TYPES = {
     "mark_irrelevant_incident",
     "needs_more_research",
 }
-HUMAN_REVIEW_RESULTS_COLUMNS = [
-    "incident_id",
-    "review_status",
-    "final_category",
-    "final_confidence",
-    "notes",
-    "source_override",
-]
-
-
 def get_default_manual_review_path() -> Path:
     return Path("data") / "manual_reviews.csv"
 
@@ -93,19 +84,7 @@ def read_manual_reviews_csv(path: str | Path) -> dict[str, ManualReviewRecord]:
 
 
 def read_human_review_results_csv(path: str | Path) -> dict[str, HumanReviewResultRecord]:
-    frame = pd.read_csv(path, dtype=str, keep_default_na=False)
-    found_columns = list(frame.columns)
-    if found_columns != HUMAN_REVIEW_RESULTS_COLUMNS:
-        missing_columns = [column for column in HUMAN_REVIEW_RESULTS_COLUMNS if column not in found_columns]
-        unexpected_columns = [column for column in found_columns if column not in HUMAN_REVIEW_RESULTS_COLUMNS]
-        raise ValueError(
-            "Human review results file must have exactly these columns: "
-            f"{', '.join(HUMAN_REVIEW_RESULTS_COLUMNS)}. "
-            f"Missing columns: {', '.join(missing_columns) or 'none'}. "
-            f"Unexpected columns: {', '.join(unexpected_columns) or 'none'}. "
-            f"Found columns: {', '.join(found_columns)}."
-        )
-
+    frame = read_human_review_results_frame(path)
     resolved_reviews: dict[str, HumanReviewResultRecord] = {}
     for row in frame.to_dict(orient="records"):
         review_status = normalize_whitespace(str(row.get("review_status", "")))
@@ -113,8 +92,6 @@ def read_human_review_results_csv(path: str | Path) -> dict[str, HumanReviewResu
             continue
 
         incident_id = normalize_whitespace(str(row.get("incident_id", "")))
-        if not incident_id:
-            raise ValueError("Human review results file has a resolved row with a blank incident_id")
         if incident_id in resolved_reviews:
             raise ValueError(f"Human review results file contains duplicate resolved incident_id: {incident_id}")
 

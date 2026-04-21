@@ -12,6 +12,7 @@ dependencies = [
   "beautifulsoup4>=4.12,<5",
   "pandas>=2.2,<3",
   "requests>=2.31,<3",
+  "streamlit>=1.44,<2",
 ]
 
 [tool.setuptools]
