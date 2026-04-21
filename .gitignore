@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.env
+.pytest_cache/
+.codex_diff_backup/
+out/
+out_*/
+out_validation/
+logs/
+*.xlsx
+manual_review_task.patch
