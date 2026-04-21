@@ -9,11 +9,20 @@ from .pipeline import run_pipeline
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="MassX tools for acquiring and enriching GVA incident data.")
+    parser = argparse.ArgumentParser(
+        description=(
+            "MassX tools for acquiring and enriching GVA incident data from canonical incident CSV input, "
+            "for example data/incidents_canonical.csv."
+        )
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     run_parser = subparsers.add_parser("run", help="Run the enrichment pipeline on a canonical CSV.")
-    run_parser.add_argument("--input", required=True, help="Path to the input GVA CSV export.")
+    run_parser.add_argument(
+        "--input",
+        required=True,
+        help="Path to the canonical pipeline input CSV, for example data/incidents_canonical.csv.",
+    )
     run_parser.add_argument("--output-dir", required=True, help="Directory for pipeline outputs.")
     run_parser.add_argument(
         "--manual-review-file",

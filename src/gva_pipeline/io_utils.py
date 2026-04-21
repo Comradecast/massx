@@ -273,9 +273,11 @@ def _raise_missing_url_values_error(
     missing_text = ", ".join(missing_url_fields)
     operations_text = "yes" if operations_inspected else "no"
     raise ValueError(
-        "Input file could not provide required URL data for: "
+        "Input file is missing or has unusable required URL field(s): "
         f"{missing_text}. Found columns: {found_text}. Operations inspected: {operations_text}. "
-        "This appears to be a raw GVA export and must be enriched with incident/source URLs before running the pipeline."
+        "Raw GVA exports are unsupported pipeline inputs unless they already provide usable incident_url and "
+        "source_url values. Use the canonical pipeline input file instead, for example "
+        "data/incidents_canonical.csv."
     )
 
 

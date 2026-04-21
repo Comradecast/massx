@@ -180,6 +180,49 @@ def test_pipeline_can_write_excel_companions_with_autofit(tmp_path: Path) -> Non
     assert worksheet.column_dimensions["A"].width > 8
 
 
+def test_pipeline_succeeds_with_supported_incidents_canonical_input(tmp_path: Path) -> None:
+    input_path = tmp_path / "incidents_canonical.csv"
+    output_dir = tmp_path / "out_canonical"
+    input_path.write_text(
+        "\n".join(
+            [
+                "incident_id,incident_date,state,city_or_county,address,victims_killed,victims_injured,suspects_killed,suspects_injured,suspects_arrested,incident_url,source_url",
+                "1001,2024-01-10,TX,Austin,123 Main St,1,4,0,0,1,https://example.com/incidents/1001,https://example.com/story-1001",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    def fake_fetch(
+        source_url: str | None,
+        *,
+        session: requests.Session,
+        timeout_seconds: float,
+        store_raw_html: bool,
+    ) -> FetchResult:
+        return FetchResult(
+            requested_url=source_url,
+            final_url=source_url,
+            status_code=200,
+            ok=True,
+            error=None,
+            article_text="Police said the shooting happened during a birthday party.",
+            raw_html=None,
+        )
+
+    report = run_pipeline(
+        input_path=input_path,
+        output_dir=output_dir,
+        fetch_fn=fake_fetch,
+    )
+
+    enriched = pd.read_csv(output_dir / "enriched_incidents.csv")
+
+    assert report.total_unique_incidents == 1
+    assert str(enriched.loc[0, "incident_id"]) == "1001"
+    assert enriched.loc[0, "fetch_ok"]
+
+
 @pytest.mark.parametrize(
     ("row", "expected_reason", "expected_priority", "needs_category_review", "needs_source_review"),
     [
@@ -307,6 +350,14 @@ def test_cli_default_behavior_does_not_pass_a_limit(monkeypatch: pytest.MonkeyPa
     assert captured["timeout_seconds"] == 8.0
 
 
+def test_cli_help_points_to_canonical_pipeline_input() -> None:
+    parser = cli.build_parser()
+    help_text = parser.format_help()
+
+    assert "data/incidents_canonical.csv" in help_text
+    assert "canonical incident CSV" in help_text
+
+
 def test_cli_passes_heartbeat_and_verbose_lifecycle(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     captured: dict[str, object] = {}
     input_path = tmp_path / "input.csv"
@@ -333,6 +384,14 @@ def test_cli_passes_heartbeat_and_verbose_lifecycle(monkeypatch: pytest.MonkeyPa
     assert exit_code == 0
     assert captured["heartbeat_seconds"] == 3.0
     assert captured["verbose_lifecycle"] is True
+
+
+def test_readme_usage_examples_point_to_canonical_input() -> None:
+    readme_text = Path("README.md").read_text(encoding="utf-8")
+
+    assert "python -m gva_pipeline.cli --input data/incidents_canonical.csv --output-dir out" in readme_text
+    assert "python -m gva_pipeline.cli --input data/incidents_canonical.csv --output-dir out --save-html" in readme_text
+    assert "python -m gva_pipeline.cli --input data/incidents_canonical.csv --output-dir out --excel-autofit" in readme_text
 
 
 def test_heartbeat_capable_code_path_does_not_change_row_counts(

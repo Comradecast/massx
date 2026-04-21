@@ -134,7 +134,9 @@ def test_read_incidents_csv_fails_cleanly_when_urls_cannot_be_recovered(tmp_path
     message = str(exc_info.value)
     assert "incident_url, source_url" in message
     assert "Operations inspected: yes" in message
-    assert "raw GVA export" in message
+    assert "missing or has unusable required URL field(s)" in message
+    assert "Raw GVA exports are unsupported pipeline inputs" in message
+    assert "data/incidents_canonical.csv" in message
 
 
 def test_read_incidents_csv_reports_found_columns_for_missing_required_fields(tmp_path: Path) -> None:

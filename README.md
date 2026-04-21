@@ -38,19 +38,19 @@ python -m pip install -e .
 ## Usage
 
 ```bash
-python -m gva_pipeline.cli --input data/incidents.csv --output-dir out
+python -m gva_pipeline.cli --input data/incidents_canonical.csv --output-dir out
 ```
 
 Optional raw-HTML archiving:
 
 ```bash
-python -m gva_pipeline.cli --input data/incidents.csv --output-dir out --save-html
+python -m gva_pipeline.cli --input data/incidents_canonical.csv --output-dir out --save-html
 ```
 
 Optional Excel companion exports with auto-fit columns:
 
 ```bash
-python -m gva_pipeline.cli --input data/incidents.csv --output-dir out --excel-autofit
+python -m gva_pipeline.cli --input data/incidents_canonical.csv --output-dir out --excel-autofit
 ```
 
 ## How To Acquire Enriched GVA Data
@@ -80,9 +80,11 @@ This acquisition path is deterministic and browser-assisted. It does not use Sel
 
 ## Accepted Input Formats
 
-The loader accepts either of these shapes:
+The pipeline's supported input path is the canonical CSV, for example `data/incidents_canonical.csv`.
 
-1. Normalized pipeline schema:
+Two file shapes may appear during the workflow:
+
+1. Canonical pipeline input:
    - `incident_id`
    - `incident_date`
    - `state`
@@ -96,7 +98,7 @@ The loader accepts either of these shapes:
    - `incident_url`
    - `source_url`
 
-2. Raw GVA-style export schema:
+2. Raw GVA export:
    - `Incident ID`
    - `Incident Date`
    - `State`
@@ -109,7 +111,7 @@ The loader accepts either of these shapes:
    - `Suspects Arrested`
    - `Operations`
 
-When a raw GVA export is provided, the loader normalizes the header names and tries to recover `incident_url` and `source_url` from `Operations`. If those URLs cannot be recovered, the pipeline fails with a clear ingestion error instead of inventing missing links.
+Use the canonical pipeline input for normal pipeline runs. A raw GVA export is not a supported default pipeline input because it may not contain usable `incident_url` and `source_url` values. The loader will attempt to recover those URLs from `Operations` when possible, but if they cannot be recovered the pipeline fails closed with a clear ingestion error instead of inventing missing links.
 
 ## Outputs
 
