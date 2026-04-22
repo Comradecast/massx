@@ -339,6 +339,26 @@ def test_build_review_metadata_applies_deterministic_review_rules(
     assert metadata["needs_source_review"] is needs_source_review
 
 
+def test_domestic_with_incidental_party_mention_does_not_trigger_party_conflict() -> None:
+    metadata = _build_review_metadata(
+        {
+            "fetch_ok": True,
+            "article_text_length": 150,
+            "category": "domestic_family",
+            "category_confidence": 0.88,
+            "mentions_party": True,
+            "mentions_domestic": True,
+            "mentions_school": False,
+        }
+    )
+
+    assert metadata["review_required"] is False
+    assert metadata["review_reason"] is None
+    assert metadata["review_priority"] == 0
+    assert metadata["needs_category_review"] is False
+    assert metadata["needs_source_review"] is False
+
+
 def test_cli_default_behavior_does_not_pass_a_limit(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     captured: dict[str, object] = {}
     input_path = tmp_path / "input.csv"

@@ -245,6 +245,8 @@ Each classification includes:
 - the matched rule name
 - a human-readable explanation
 
+School and party context is interpreted conservatively: `school_campus` now requires explicit school-location language such as `school`, `campus`, `on campus`, or `school grounds`, while student-only or prom-related context at a private residence is treated as party/social context unless a stronger rule applies.
+
 ## Sample Smoke-Test Dataset
 
 ```csv

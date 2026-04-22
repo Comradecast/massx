@@ -322,7 +322,10 @@ def _build_review_metadata(row: dict[str, object]) -> dict[str, object]:
         category_review_reasons.append("rule_conflict_domestic_context")
     if mentions_school and category != "school_campus":
         category_review_reasons.append("rule_conflict_school_context")
-    if mentions_party and category not in {"party_social_event", "school_campus"}:
+    if mentions_party and not (mentions_domestic and category == "domestic_family") and category not in {
+        "party_social_event",
+        "school_campus",
+    }:
         category_review_reasons.append("rule_conflict_party_context")
 
     all_reasons = [*source_review_reasons, *category_review_reasons]
