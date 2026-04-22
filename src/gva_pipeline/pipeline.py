@@ -477,6 +477,112 @@ def _build_domain_fetch_summary(enriched_frame: pd.DataFrame) -> pd.DataFrame:
     return summary.sort_values(["incident_count", "source_domain"], ascending=[False, True]).reset_index(drop=True)
 
 
+def _resolve_review_domain(row: pd.Series) -> str:
+    source_domain = _normalize_source_domain(row.get("source_domain"))
+    if source_domain != "unknown":
+        return source_domain
+    fetch_request_domain = _normalize_source_domain(row.get("fetch_request_domain"))
+    if fetch_request_domain != "unknown":
+        return fetch_request_domain
+    return "unknown"
+
+
+def _review_applied_field_contains(value: object, field_name: str) -> bool:
+    text = str(value or "")
+    return field_name in {item for item in text.split("|") if item}
+
+
+def _build_domain_review_summary(enriched_frame: pd.DataFrame) -> pd.DataFrame:
+    working = enriched_frame.copy()
+    working["domain"] = working.apply(_resolve_review_domain, axis=1)
+    working["fetch_ok"] = working["fetch_ok"].fillna(False)
+    working["review_required"] = working["review_required"].fillna(False)
+    working["review_applied"] = working["review_applied"].fillna(False)
+    working["selected_source_overridden"] = working["selected_source_overridden"].fillna(False)
+    working["category"] = working["category"].fillna("")
+    working["review_applied_fields"] = working["review_applied_fields"].fillna("")
+    working["article_text_length"] = pd.to_numeric(working["article_text_length"], errors="coerce").fillna(0)
+
+    working["total_incidents"] = 1
+    working["fetched_ok_count"] = working["fetch_ok"].map(lambda value: 1 if bool(value) else 0)
+    working["fetch_failed_count"] = working["fetch_ok"].map(lambda value: 0 if bool(value) else 1)
+    working["no_article_text_count"] = working["article_text_length"].map(lambda value: 1 if int(value) == 0 else 0)
+    working["review_required_count"] = working["review_required"].map(lambda value: 1 if bool(value) else 0)
+    working["review_applied_count"] = working["review_applied"].map(lambda value: 1 if bool(value) else 0)
+    working["category_override_count"] = working["review_applied_fields"].map(
+        lambda value: 1 if _review_applied_field_contains(value, "category") else 0
+    )
+    working["confidence_override_count"] = working["review_applied_fields"].map(
+        lambda value: 1 if _review_applied_field_contains(value, "category_confidence") else 0
+    )
+    working["source_override_count"] = working["review_applied_fields"].map(
+        lambda value: 1 if _review_applied_field_contains(value, "selected_source_url") else 0
+    )
+    working["selected_source_overridden_count"] = working["selected_source_overridden"].map(
+        lambda value: 1 if bool(value) else 0
+    )
+    working["unknown_category_count"] = working["category"].map(lambda value: 1 if str(value) == "unknown" else 0)
+
+    summary = (
+        working.groupby("domain", dropna=False)
+        .agg(
+            total_incidents=("total_incidents", "sum"),
+            fetched_ok_count=("fetched_ok_count", "sum"),
+            fetch_failed_count=("fetch_failed_count", "sum"),
+            no_article_text_count=("no_article_text_count", "sum"),
+            review_required_count=("review_required_count", "sum"),
+            review_applied_count=("review_applied_count", "sum"),
+            category_override_count=("category_override_count", "sum"),
+            confidence_override_count=("confidence_override_count", "sum"),
+            source_override_count=("source_override_count", "sum"),
+            selected_source_overridden_count=("selected_source_overridden_count", "sum"),
+            unknown_category_count=("unknown_category_count", "sum"),
+        )
+        .reset_index()
+    )
+    summary["fetch_failure_rate"] = summary.apply(
+        lambda row: row["fetch_failed_count"] / row["total_incidents"] if row["total_incidents"] else 0.0,
+        axis=1,
+    )
+    summary["review_required_rate"] = summary.apply(
+        lambda row: row["review_required_count"] / row["total_incidents"] if row["total_incidents"] else 0.0,
+        axis=1,
+    )
+    summary["review_applied_rate"] = summary.apply(
+        lambda row: row["review_applied_count"] / row["total_incidents"] if row["total_incidents"] else 0.0,
+        axis=1,
+    )
+    summary["source_override_rate"] = summary.apply(
+        lambda row: row["source_override_count"] / row["total_incidents"] if row["total_incidents"] else 0.0,
+        axis=1,
+    )
+    summary = summary[
+        [
+            "domain",
+            "total_incidents",
+            "fetched_ok_count",
+            "fetch_failed_count",
+            "no_article_text_count",
+            "review_required_count",
+            "review_applied_count",
+            "category_override_count",
+            "confidence_override_count",
+            "source_override_count",
+            "selected_source_overridden_count",
+            "unknown_category_count",
+            "fetch_failure_rate",
+            "review_required_rate",
+            "review_applied_rate",
+            "source_override_rate",
+        ]
+    ].copy()
+    return summary.sort_values(
+        ["review_required_count", "review_applied_count", "fetch_failed_count", "total_incidents", "domain"],
+        ascending=[False, False, False, False, True],
+        kind="stable",
+    ).reset_index(drop=True)
+
+
 def _apply_human_review_result(
     row: dict[str, object],
     human_review_result: HumanReviewResultRecord | None,
@@ -773,6 +879,13 @@ def run_pipeline(
         output_directory,
         "domain_fetch_summary.csv",
         domain_fetch_summary,
+        write_excel_autofit=write_excel_autofit,
+    )
+    domain_review_summary = _build_domain_review_summary(enriched_frame)
+    _write_tabular_outputs(
+        output_directory,
+        "domain_review_summary.csv",
+        domain_review_summary,
         write_excel_autofit=write_excel_autofit,
     )
 

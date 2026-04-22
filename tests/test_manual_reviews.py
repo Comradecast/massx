@@ -543,7 +543,7 @@ def test_duplicate_resolved_human_review_results_fail_cleanly(tmp_path: Path) ->
     with pytest.raises(ValueError) as exc_info:
         read_human_review_results_csv(human_review_results_path)
 
-    assert "duplicate resolved incident_id: dup1" in str(exc_info.value)
+    assert "duplicate incident_id: dup1" in str(exc_info.value)
 
 
 def test_missing_required_human_review_results_columns_fail_cleanly(tmp_path: Path) -> None:

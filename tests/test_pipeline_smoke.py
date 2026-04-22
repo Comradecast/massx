@@ -11,7 +11,7 @@ import requests
 
 from gva_pipeline import cli
 from gva_pipeline.models import FetchResult
-from gva_pipeline.pipeline import _build_human_review_queue, _build_review_metadata, run_pipeline
+from gva_pipeline.pipeline import _build_domain_review_summary, _build_human_review_queue, _build_review_metadata, run_pipeline
 
 
 def test_pipeline_smoke_and_deduplication(tmp_path: Path) -> None:
@@ -176,6 +176,7 @@ def test_pipeline_can_write_excel_companions_with_autofit(tmp_path: Path) -> Non
 
     assert (output_dir / "summary_by_category.xlsx").exists()
     assert (output_dir / "human_review_queue.xlsx").exists()
+    assert (output_dir / "domain_review_summary.xlsx").exists()
     assert worksheet.column_dimensions["A"].width is not None
     assert worksheet.column_dimensions["A"].width > 8
 
@@ -747,6 +748,155 @@ def test_human_review_queue_sorts_by_priority_then_newest_date_then_incident_id(
     )
 
     assert list(review_queue["incident_id"]) == ["a-newer", "b-newer", "a-older"]
+
+
+def test_domain_review_summary_aggregates_and_sorts_deterministically() -> None:
+    summary = _build_domain_review_summary(
+        pd.DataFrame(
+            [
+                {
+                    "incident_id": "1",
+                    "source_domain": "example.com",
+                    "fetch_request_domain": "ignored.example.com",
+                    "fetch_ok": True,
+                    "article_text_length": 120,
+                    "review_required": True,
+                    "review_applied": True,
+                    "review_applied_fields": "category|selected_source_url",
+                    "selected_source_overridden": True,
+                    "category": "party_social_event",
+                },
+                {
+                    "incident_id": "2",
+                    "source_domain": "",
+                    "fetch_request_domain": "fallback.example.com",
+                    "fetch_ok": False,
+                    "article_text_length": 0,
+                    "review_required": True,
+                    "review_applied": False,
+                    "review_applied_fields": "",
+                    "selected_source_overridden": False,
+                    "category": "unknown",
+                },
+                {
+                    "incident_id": "3",
+                    "source_domain": "",
+                    "fetch_request_domain": "",
+                    "fetch_ok": True,
+                    "article_text_length": 0,
+                    "review_required": False,
+                    "review_applied": True,
+                    "review_applied_fields": "category_confidence",
+                    "selected_source_overridden": False,
+                    "category": "unknown",
+                },
+                {
+                    "incident_id": "4",
+                    "source_domain": "example.com",
+                    "fetch_request_domain": "ignored.example.com",
+                    "fetch_ok": False,
+                    "article_text_length": 0,
+                    "review_required": True,
+                    "review_applied": True,
+                    "review_applied_fields": "category_confidence|selected_source_url",
+                    "selected_source_overridden": True,
+                    "category": "unknown",
+                },
+            ]
+        )
+    )
+
+    assert list(summary["domain"]) == ["example.com", "fallback.example.com", "unknown"]
+
+    example_row = summary.loc[summary["domain"] == "example.com"].iloc[0]
+    assert example_row["total_incidents"] == 2
+    assert example_row["fetched_ok_count"] == 1
+    assert example_row["fetch_failed_count"] == 1
+    assert example_row["no_article_text_count"] == 1
+    assert example_row["review_required_count"] == 2
+    assert example_row["review_applied_count"] == 2
+    assert example_row["category_override_count"] == 1
+    assert example_row["confidence_override_count"] == 1
+    assert example_row["source_override_count"] == 2
+    assert example_row["selected_source_overridden_count"] == 2
+    assert example_row["unknown_category_count"] == 1
+    assert abs(example_row["fetch_failure_rate"] - 0.5) < 1e-9
+    assert abs(example_row["review_required_rate"] - 1.0) < 1e-9
+    assert abs(example_row["review_applied_rate"] - 1.0) < 1e-9
+    assert abs(example_row["source_override_rate"] - 1.0) < 1e-9
+
+    fallback_row = summary.loc[summary["domain"] == "fallback.example.com"].iloc[0]
+    assert fallback_row["total_incidents"] == 1
+    assert fallback_row["fetch_failed_count"] == 1
+    assert fallback_row["review_required_count"] == 1
+    assert fallback_row["review_applied_count"] == 0
+    assert fallback_row["unknown_category_count"] == 1
+
+    unknown_row = summary.loc[summary["domain"] == "unknown"].iloc[0]
+    assert unknown_row["total_incidents"] == 1
+    assert unknown_row["fetched_ok_count"] == 1
+    assert unknown_row["fetch_failed_count"] == 0
+    assert unknown_row["review_required_count"] == 0
+    assert unknown_row["review_applied_count"] == 1
+    assert unknown_row["confidence_override_count"] == 1
+    assert unknown_row["selected_source_overridden_count"] == 0
+
+
+def test_pipeline_writes_domain_review_summary_artifact(tmp_path: Path) -> None:
+    input_path = tmp_path / "review_domains.csv"
+    output_dir = tmp_path / "out_review_domains"
+    input_path.write_text(
+        "\n".join(
+            [
+                "incident_id,incident_date,state,city_or_county,address,victims_killed,victims_injured,suspects_killed,suspects_injured,suspects_arrested,incident_url,source_url",
+                "d1,2024-01-10,TX,Austin,1 Main St,0,4,0,0,1,https://example.com/incidents/d1,https://example.com/story-d1",
+                "d2,2024-01-11,TX,Austin,2 Main St,0,4,0,0,1,https://example.com/incidents/d2,https://blocked.example.com/story-d2",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    def fake_fetch(
+        source_url: str | None,
+        *,
+        session: requests.Session,
+        timeout_seconds: float,
+        store_raw_html: bool,
+    ) -> FetchResult:
+        if source_url and "blocked" in source_url:
+            return FetchResult(
+                requested_url=source_url,
+                final_url=source_url,
+                status_code=404,
+                ok=False,
+                error="http_404",
+                article_text=None,
+                acquisition_status="permanent_not_found",
+                failure_stage="fetch",
+                failure_reason="http_404",
+                source_category="NEWS",
+            )
+        return FetchResult(
+            requested_url=source_url,
+            final_url=source_url,
+            status_code=200,
+            ok=True,
+            error=None,
+            article_text="Police said the shooting happened during a birthday party.",
+            source_category="NEWS",
+        )
+
+    run_pipeline(
+        input_path=input_path,
+        output_dir=output_dir,
+        write_excel_autofit=True,
+        fetch_fn=fake_fetch,
+    )
+
+    domain_review_summary = pd.read_csv(output_dir / "domain_review_summary.csv")
+
+    assert set(domain_review_summary["domain"]) == {"example.com", "blocked.example.com"}
+    assert (output_dir / "domain_review_summary.xlsx").exists()
 
 
 def test_pipeline_output_preserves_core_schema_and_adds_acquisition_fields(tmp_path: Path) -> None:
