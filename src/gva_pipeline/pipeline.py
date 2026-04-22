@@ -655,6 +655,73 @@ def _build_review_reason_summary(enriched_frame: pd.DataFrame) -> pd.DataFrame:
     ).reset_index(drop=True)
 
 
+def _build_run_quality_summary(enriched_frame: pd.DataFrame) -> pd.DataFrame:
+    working = enriched_frame.copy()
+    working["fetch_ok"] = working["fetch_ok"].fillna(False)
+    working["review_required"] = working["review_required"].fillna(False)
+    working["review_applied"] = working["review_applied"].fillna(False)
+    working["selected_source_overridden"] = working["selected_source_overridden"].fillna(False)
+    working["category"] = working["category"].fillna("")
+
+    total_incidents = int(len(working.index))
+    fetch_success_count = int(working["fetch_ok"].map(bool).sum())
+    fetch_failure_count = total_incidents - fetch_success_count
+    unknown_category_count = int(working["category"].map(lambda value: str(value) == "unknown").sum())
+    review_required_count = int(working["review_required"].map(bool).sum())
+    review_applied_count = int(working["review_applied"].map(bool).sum())
+    selected_source_overridden_count = int(working["selected_source_overridden"].map(bool).sum())
+
+    category_counts = working["category"].value_counts(dropna=False)
+
+    row = {
+        "total_incidents": total_incidents,
+        "fetch_success_count": fetch_success_count,
+        "fetch_failure_count": fetch_failure_count,
+        "unknown_category_count": unknown_category_count,
+        "review_required_count": review_required_count,
+        "review_applied_count": review_applied_count,
+        "selected_source_overridden_count": selected_source_overridden_count,
+        "domestic_family_count": int(category_counts.get("domestic_family", 0)),
+        "school_campus_count": int(category_counts.get("school_campus", 0)),
+        "party_social_event_count": int(category_counts.get("party_social_event", 0)),
+        "workplace_business_count": int(category_counts.get("workplace_business", 0)),
+        "nightlife_bar_district_count": int(category_counts.get("nightlife_bar_district", 0)),
+        "public_space_count": int(category_counts.get("public_space", 0)),
+        "public_space_nonrandom_count": int(category_counts.get("public_space_nonrandom", 0)),
+        "interpersonal_dispute_count": int(category_counts.get("interpersonal_dispute", 0)),
+        "fetch_failure_rate": fetch_failure_count / total_incidents if total_incidents else 0.0,
+        "unknown_category_rate": unknown_category_count / total_incidents if total_incidents else 0.0,
+        "review_required_rate": review_required_count / total_incidents if total_incidents else 0.0,
+        "review_applied_rate": review_applied_count / total_incidents if total_incidents else 0.0,
+    }
+    return pd.DataFrame(
+        [
+            row,
+        ],
+        columns=[
+            "total_incidents",
+            "fetch_success_count",
+            "fetch_failure_count",
+            "unknown_category_count",
+            "review_required_count",
+            "review_applied_count",
+            "selected_source_overridden_count",
+            "domestic_family_count",
+            "school_campus_count",
+            "party_social_event_count",
+            "workplace_business_count",
+            "nightlife_bar_district_count",
+            "public_space_count",
+            "public_space_nonrandom_count",
+            "interpersonal_dispute_count",
+            "fetch_failure_rate",
+            "unknown_category_rate",
+            "review_required_rate",
+            "review_applied_rate",
+        ],
+    )
+
+
 def _apply_human_review_result(
     row: dict[str, object],
     human_review_result: HumanReviewResultRecord | None,
@@ -965,6 +1032,13 @@ def run_pipeline(
         output_directory,
         "review_reason_summary.csv",
         review_reason_summary,
+        write_excel_autofit=write_excel_autofit,
+    )
+    run_quality_summary = _build_run_quality_summary(enriched_frame)
+    _write_tabular_outputs(
+        output_directory,
+        "run_quality_summary.csv",
+        run_quality_summary,
         write_excel_autofit=write_excel_autofit,
     )
 

@@ -131,6 +131,7 @@ The pipeline writes:
 - `human_review_queue.csv`
 - `domain_review_summary.csv`
 - `review_reason_summary.csv`
+- `run_quality_summary.csv`
 
 When `--excel-autofit` is enabled, it also writes `.xlsx` companions for each CSV output with Excel-friendly column widths. This is the closest automated equivalent to using `Alt`, `H`, `O`, `I` after opening the file in Excel. The CSV files themselves remain plain text and cannot store column widths.
 
@@ -191,6 +192,12 @@ Metrics are built from final enriched rows after human review override applicati
 - `review_applied_rate`
 
 Use this summary to distinguish acquisition pain from classification pain. High `fetch_failed_count` or `no_article_text_count` points to source-acquisition problems, while high `unknown_category_count` under queued review reasons points to classification gaps that are still surfacing after fetch succeeds.
+
+## Run Quality Summary
+
+`run_quality_summary.csv` is a one-row snapshot of the current run after final override application. It captures fetch success/failure totals, queue and review counts, source-override counts, and the final category counts for the main incident buckets.
+
+Use it as a lightweight drift check across repeated runs: if `fetch_failure_rate`, `unknown_category_rate`, `review_required_rate`, or one of the category counts moves unexpectedly, that is a quick signal that acquisition behavior, rule quality, or review load may have shifted.
 
 ## Human Review Results
 

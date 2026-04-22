@@ -14,6 +14,7 @@ from gva_pipeline.models import FetchResult
 from gva_pipeline.pipeline import (
     _build_domain_review_summary,
     _build_human_review_queue,
+    _build_run_quality_summary,
     _build_review_metadata,
     _build_review_reason_summary,
     run_pipeline,
@@ -184,6 +185,7 @@ def test_pipeline_can_write_excel_companions_with_autofit(tmp_path: Path) -> Non
     assert (output_dir / "human_review_queue.xlsx").exists()
     assert (output_dir / "domain_review_summary.xlsx").exists()
     assert (output_dir / "review_reason_summary.xlsx").exists()
+    assert (output_dir / "run_quality_summary.xlsx").exists()
     assert worksheet.column_dimensions["A"].width is not None
     assert worksheet.column_dimensions["A"].width > 8
 
@@ -959,6 +961,109 @@ def test_review_reason_summary_aggregates_and_sorts_deterministically() -> None:
     assert unknown_category_row["selected_source_overridden_count"] == 0
 
 
+def test_run_quality_summary_aggregates_current_run_snapshot() -> None:
+    summary = _build_run_quality_summary(
+        pd.DataFrame(
+            [
+                {
+                    "incident_id": "1",
+                    "fetch_ok": True,
+                    "review_required": False,
+                    "review_applied": False,
+                    "selected_source_overridden": False,
+                    "category": "domestic_family",
+                },
+                {
+                    "incident_id": "2",
+                    "fetch_ok": False,
+                    "review_required": True,
+                    "review_applied": False,
+                    "selected_source_overridden": False,
+                    "category": "unknown",
+                },
+                {
+                    "incident_id": "3",
+                    "fetch_ok": True,
+                    "review_required": True,
+                    "review_applied": True,
+                    "selected_source_overridden": True,
+                    "category": "party_social_event",
+                },
+                {
+                    "incident_id": "4",
+                    "fetch_ok": True,
+                    "review_required": False,
+                    "review_applied": True,
+                    "selected_source_overridden": False,
+                    "category": "workplace_business",
+                },
+                {
+                    "incident_id": "5",
+                    "fetch_ok": True,
+                    "review_required": False,
+                    "review_applied": False,
+                    "selected_source_overridden": False,
+                    "category": "nightlife_bar_district",
+                },
+                {
+                    "incident_id": "6",
+                    "fetch_ok": True,
+                    "review_required": False,
+                    "review_applied": False,
+                    "selected_source_overridden": False,
+                    "category": "public_space",
+                },
+                {
+                    "incident_id": "7",
+                    "fetch_ok": True,
+                    "review_required": False,
+                    "review_applied": False,
+                    "selected_source_overridden": False,
+                    "category": "public_space_nonrandom",
+                },
+                {
+                    "incident_id": "8",
+                    "fetch_ok": True,
+                    "review_required": False,
+                    "review_applied": False,
+                    "selected_source_overridden": False,
+                    "category": "interpersonal_dispute",
+                },
+                {
+                    "incident_id": "9",
+                    "fetch_ok": True,
+                    "review_required": True,
+                    "review_applied": True,
+                    "selected_source_overridden": False,
+                    "category": "school_campus",
+                },
+            ]
+        )
+    )
+
+    assert len(summary.index) == 1
+    row = summary.iloc[0]
+    assert row["total_incidents"] == 9
+    assert row["fetch_success_count"] == 8
+    assert row["fetch_failure_count"] == 1
+    assert row["unknown_category_count"] == 1
+    assert row["review_required_count"] == 3
+    assert row["review_applied_count"] == 3
+    assert row["selected_source_overridden_count"] == 1
+    assert row["domestic_family_count"] == 1
+    assert row["school_campus_count"] == 1
+    assert row["party_social_event_count"] == 1
+    assert row["workplace_business_count"] == 1
+    assert row["nightlife_bar_district_count"] == 1
+    assert row["public_space_count"] == 1
+    assert row["public_space_nonrandom_count"] == 1
+    assert row["interpersonal_dispute_count"] == 1
+    assert abs(row["fetch_failure_rate"] - (1 / 9)) < 1e-9
+    assert abs(row["unknown_category_rate"] - (1 / 9)) < 1e-9
+    assert abs(row["review_required_rate"] - (3 / 9)) < 1e-9
+    assert abs(row["review_applied_rate"] - (3 / 9)) < 1e-9
+
+
 def test_pipeline_writes_domain_review_summary_artifact(tmp_path: Path) -> None:
     input_path = tmp_path / "review_domains.csv"
     output_dir = tmp_path / "out_review_domains"
@@ -1071,6 +1176,64 @@ def test_pipeline_writes_review_reason_summary_artifact(tmp_path: Path) -> None:
 
     assert set(review_reason_summary["review_reason"]) == {"fetch_failed", "not_queued"}
     assert (output_dir / "review_reason_summary.xlsx").exists()
+
+
+def test_pipeline_writes_run_quality_summary_artifact(tmp_path: Path) -> None:
+    input_path = tmp_path / "run_quality.csv"
+    output_dir = tmp_path / "out_run_quality"
+    input_path.write_text(
+        "\n".join(
+            [
+                "incident_id,incident_date,state,city_or_county,address,victims_killed,victims_injured,suspects_killed,suspects_injured,suspects_arrested,incident_url,source_url",
+                "rq1,2024-01-10,TX,Austin,1 Main St,0,4,0,0,1,https://example.com/incidents/rq1,https://example.com/story-rq1",
+                "rq2,2024-01-11,TX,Austin,2 Main St,0,4,0,0,1,https://example.com/incidents/rq2,https://example.com/story-rq2",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    def fake_fetch(
+        source_url: str | None,
+        *,
+        session: requests.Session,
+        timeout_seconds: float,
+        store_raw_html: bool,
+    ) -> FetchResult:
+        if source_url and source_url.endswith("story-rq2"):
+            return FetchResult(
+                requested_url=source_url,
+                final_url=source_url,
+                status_code=404,
+                ok=False,
+                error="http_404",
+                article_text=None,
+                acquisition_status="permanent_not_found",
+                failure_stage="fetch",
+                failure_reason="http_404",
+                source_category="NEWS",
+            )
+        return FetchResult(
+            requested_url=source_url,
+            final_url=source_url,
+            status_code=200,
+            ok=True,
+            error=None,
+            article_text="Police said the shooting happened during a house party.",
+            source_category="NEWS",
+        )
+
+    run_pipeline(
+        input_path=input_path,
+        output_dir=output_dir,
+        write_excel_autofit=True,
+        fetch_fn=fake_fetch,
+    )
+
+    run_quality_summary = pd.read_csv(output_dir / "run_quality_summary.csv")
+
+    assert len(run_quality_summary.index) == 1
+    assert run_quality_summary.loc[0, "total_incidents"] == 2
+    assert (output_dir / "run_quality_summary.xlsx").exists()
 
 
 def test_pipeline_output_preserves_core_schema_and_adds_acquisition_fields(tmp_path: Path) -> None:
