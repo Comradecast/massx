@@ -129,3 +129,13 @@ def upsert_human_review_result_row(frame: pd.DataFrame, row: dict[str, str]) -> 
     updated = pd.concat([remaining, pd.DataFrame([row])], ignore_index=True)
     _validate_human_review_results_frame(updated)
     return updated[HUMAN_REVIEW_RESULTS_COLUMNS].sort_values("incident_id", kind="stable").reset_index(drop=True)
+
+
+def delete_human_review_result_row(frame: pd.DataFrame, incident_id: str) -> pd.DataFrame:
+    _validate_human_review_results_frame(frame)
+    normalized_incident_id = normalize_whitespace(incident_id)
+    if not normalized_incident_id:
+        raise ValueError("Human review results row cannot have a blank incident_id")
+    remaining = frame.loc[frame["incident_id"] != normalized_incident_id].copy()
+    _validate_human_review_results_frame(remaining)
+    return remaining[HUMAN_REVIEW_RESULTS_COLUMNS].sort_values("incident_id", kind="stable").reset_index(drop=True)

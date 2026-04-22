@@ -234,6 +234,12 @@ incident_id,review_status,final_category,final_confidence,notes,source_override
 
 If the results file does not exist yet, the app creates it with that exact header before saving.
 
+Reviewer workflow tips:
+
+- use `Save review` to write or update the selected incident's row in `human_review_results.csv`
+- use `Clear saved review for this incident` to remove only the selected incident's saved row while preserving all others
+- use `Next unresolved incident` to jump to the next unresolved row in the currently filtered queue
+
 ## Classification Categories
 
 - `domestic_family`
