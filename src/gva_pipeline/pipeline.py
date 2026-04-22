@@ -583,6 +583,75 @@ def _build_domain_review_summary(enriched_frame: pd.DataFrame) -> pd.DataFrame:
     ).reset_index(drop=True)
 
 
+def _resolve_review_reason_group(row: pd.Series) -> str:
+    if not bool(row.get("review_required")):
+        return "not_queued"
+    review_reason = str(row.get("review_reason") or "").strip()
+    return review_reason or "not_queued"
+
+
+def _build_review_reason_summary(enriched_frame: pd.DataFrame) -> pd.DataFrame:
+    working = enriched_frame.copy()
+    working["review_reason"] = working.apply(_resolve_review_reason_group, axis=1)
+    working["review_required"] = working["review_required"].fillna(False)
+    working["review_applied"] = working["review_applied"].fillna(False)
+    working["fetch_ok"] = working["fetch_ok"].fillna(False)
+    working["selected_source_overridden"] = working["selected_source_overridden"].fillna(False)
+    working["category"] = working["category"].fillna("")
+    working["article_text_length"] = pd.to_numeric(working["article_text_length"], errors="coerce").fillna(0)
+
+    working["total_incidents"] = 1
+    working["queued_incidents"] = working["review_required"].map(lambda value: 1 if bool(value) else 0)
+    working["review_applied_count"] = working["review_applied"].map(lambda value: 1 if bool(value) else 0)
+    working["fetch_failed_count"] = working["fetch_ok"].map(lambda value: 0 if bool(value) else 1)
+    working["no_article_text_count"] = working["article_text_length"].map(lambda value: 1 if int(value) == 0 else 0)
+    working["unknown_category_count"] = working["category"].map(lambda value: 1 if str(value) == "unknown" else 0)
+    working["selected_source_overridden_count"] = working["selected_source_overridden"].map(
+        lambda value: 1 if bool(value) else 0
+    )
+
+    summary = (
+        working.groupby("review_reason", dropna=False)
+        .agg(
+            total_incidents=("total_incidents", "sum"),
+            queued_incidents=("queued_incidents", "sum"),
+            review_applied_count=("review_applied_count", "sum"),
+            fetch_failed_count=("fetch_failed_count", "sum"),
+            no_article_text_count=("no_article_text_count", "sum"),
+            unknown_category_count=("unknown_category_count", "sum"),
+            selected_source_overridden_count=("selected_source_overridden_count", "sum"),
+        )
+        .reset_index()
+    )
+    summary["queued_rate"] = summary.apply(
+        lambda row: row["queued_incidents"] / row["total_incidents"] if row["total_incidents"] else 0.0,
+        axis=1,
+    )
+    summary["review_applied_rate"] = summary.apply(
+        lambda row: row["review_applied_count"] / row["total_incidents"] if row["total_incidents"] else 0.0,
+        axis=1,
+    )
+    summary = summary[
+        [
+            "review_reason",
+            "total_incidents",
+            "queued_incidents",
+            "review_applied_count",
+            "fetch_failed_count",
+            "no_article_text_count",
+            "unknown_category_count",
+            "selected_source_overridden_count",
+            "queued_rate",
+            "review_applied_rate",
+        ]
+    ].copy()
+    return summary.sort_values(
+        ["queued_incidents", "review_applied_count", "total_incidents", "review_reason"],
+        ascending=[False, False, False, True],
+        kind="stable",
+    ).reset_index(drop=True)
+
+
 def _apply_human_review_result(
     row: dict[str, object],
     human_review_result: HumanReviewResultRecord | None,
@@ -886,6 +955,13 @@ def run_pipeline(
         output_directory,
         "domain_review_summary.csv",
         domain_review_summary,
+        write_excel_autofit=write_excel_autofit,
+    )
+    review_reason_summary = _build_review_reason_summary(enriched_frame)
+    _write_tabular_outputs(
+        output_directory,
+        "review_reason_summary.csv",
+        review_reason_summary,
         write_excel_autofit=write_excel_autofit,
     )
 

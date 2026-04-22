@@ -130,6 +130,7 @@ The pipeline writes:
 - `fetch_failures.csv`
 - `human_review_queue.csv`
 - `domain_review_summary.csv`
+- `review_reason_summary.csv`
 
 When `--excel-autofit` is enabled, it also writes `.xlsx` companions for each CSV output with Excel-friendly column widths. This is the closest automated equivalent to using `Alt`, `H`, `O`, `I` after opening the file in Excel. The CSV files themselves remain plain text and cannot store column widths.
 
@@ -172,6 +173,24 @@ Metrics are built from final enriched rows after human review override applicati
 - `source_override_rate`
 
 Use this summary to spot high-friction domains, especially those with high review-required counts, repeated fetch failures, and frequent source/category overrides.
+
+## Review Reason Summary
+
+`review_reason_summary.csv` shows why incidents are entering the human review queue after final override application. It groups final enriched rows by the existing `review_reason` emitted by the pipeline. Rows where `review_required` is false, or where `review_reason` is blank, are grouped as `not_queued`.
+
+Metrics are built from final enriched rows after human review override application:
+
+- `total_incidents`
+- `queued_incidents`
+- `review_applied_count`
+- `fetch_failed_count`
+- `no_article_text_count`
+- `unknown_category_count`
+- `selected_source_overridden_count`
+- `queued_rate`
+- `review_applied_rate`
+
+Use this summary to distinguish acquisition pain from classification pain. High `fetch_failed_count` or `no_article_text_count` points to source-acquisition problems, while high `unknown_category_count` under queued review reasons points to classification gaps that are still surfacing after fetch succeeds.
 
 ## Human Review Results
 

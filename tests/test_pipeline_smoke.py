@@ -11,7 +11,13 @@ import requests
 
 from gva_pipeline import cli
 from gva_pipeline.models import FetchResult
-from gva_pipeline.pipeline import _build_domain_review_summary, _build_human_review_queue, _build_review_metadata, run_pipeline
+from gva_pipeline.pipeline import (
+    _build_domain_review_summary,
+    _build_human_review_queue,
+    _build_review_metadata,
+    _build_review_reason_summary,
+    run_pipeline,
+)
 
 
 def test_pipeline_smoke_and_deduplication(tmp_path: Path) -> None:
@@ -177,6 +183,7 @@ def test_pipeline_can_write_excel_companions_with_autofit(tmp_path: Path) -> Non
     assert (output_dir / "summary_by_category.xlsx").exists()
     assert (output_dir / "human_review_queue.xlsx").exists()
     assert (output_dir / "domain_review_summary.xlsx").exists()
+    assert (output_dir / "review_reason_summary.xlsx").exists()
     assert worksheet.column_dimensions["A"].width is not None
     assert worksheet.column_dimensions["A"].width > 8
 
@@ -842,6 +849,96 @@ def test_domain_review_summary_aggregates_and_sorts_deterministically() -> None:
     assert unknown_row["selected_source_overridden_count"] == 0
 
 
+def test_review_reason_summary_aggregates_and_sorts_deterministically() -> None:
+    summary = _build_review_reason_summary(
+        pd.DataFrame(
+            [
+                {
+                    "incident_id": "1",
+                    "review_required": True,
+                    "review_reason": "fetch_failed",
+                    "review_applied": False,
+                    "fetch_ok": False,
+                    "article_text_length": 0,
+                    "category": "unknown",
+                    "selected_source_overridden": False,
+                },
+                {
+                    "incident_id": "2",
+                    "review_required": True,
+                    "review_reason": "fetch_failed",
+                    "review_applied": True,
+                    "fetch_ok": False,
+                    "article_text_length": 0,
+                    "category": "unknown",
+                    "selected_source_overridden": True,
+                },
+                {
+                    "incident_id": "3",
+                    "review_required": True,
+                    "review_reason": "unknown_category",
+                    "review_applied": True,
+                    "fetch_ok": True,
+                    "article_text_length": 120,
+                    "category": "party_social_event",
+                    "selected_source_overridden": False,
+                },
+                {
+                    "incident_id": "4",
+                    "review_required": False,
+                    "review_reason": "",
+                    "review_applied": False,
+                    "fetch_ok": True,
+                    "article_text_length": 50,
+                    "category": "workplace_business",
+                    "selected_source_overridden": False,
+                },
+                {
+                    "incident_id": "5",
+                    "review_required": False,
+                    "review_reason": "fetch_failed",
+                    "review_applied": True,
+                    "fetch_ok": True,
+                    "article_text_length": 0,
+                    "category": "unknown",
+                    "selected_source_overridden": True,
+                },
+            ]
+        )
+    )
+
+    assert list(summary["review_reason"]) == ["fetch_failed", "unknown_category", "not_queued"]
+
+    fetch_failed_row = summary.loc[summary["review_reason"] == "fetch_failed"].iloc[0]
+    assert fetch_failed_row["total_incidents"] == 2
+    assert fetch_failed_row["queued_incidents"] == 2
+    assert fetch_failed_row["review_applied_count"] == 1
+    assert fetch_failed_row["fetch_failed_count"] == 2
+    assert fetch_failed_row["no_article_text_count"] == 2
+    assert fetch_failed_row["unknown_category_count"] == 2
+    assert fetch_failed_row["selected_source_overridden_count"] == 1
+    assert abs(fetch_failed_row["queued_rate"] - 1.0) < 1e-9
+    assert abs(fetch_failed_row["review_applied_rate"] - 0.5) < 1e-9
+
+    not_queued_row = summary.loc[summary["review_reason"] == "not_queued"].iloc[0]
+    assert not_queued_row["total_incidents"] == 2
+    assert not_queued_row["queued_incidents"] == 0
+    assert not_queued_row["review_applied_count"] == 1
+    assert not_queued_row["fetch_failed_count"] == 0
+    assert not_queued_row["no_article_text_count"] == 1
+    assert not_queued_row["unknown_category_count"] == 1
+    assert not_queued_row["selected_source_overridden_count"] == 1
+    assert abs(not_queued_row["queued_rate"] - 0.0) < 1e-9
+    assert abs(not_queued_row["review_applied_rate"] - 0.5) < 1e-9
+
+    unknown_category_row = summary.loc[summary["review_reason"] == "unknown_category"].iloc[0]
+    assert unknown_category_row["total_incidents"] == 1
+    assert unknown_category_row["queued_incidents"] == 1
+    assert unknown_category_row["review_applied_count"] == 1
+    assert unknown_category_row["fetch_failed_count"] == 0
+    assert unknown_category_row["selected_source_overridden_count"] == 0
+
+
 def test_pipeline_writes_domain_review_summary_artifact(tmp_path: Path) -> None:
     input_path = tmp_path / "review_domains.csv"
     output_dir = tmp_path / "out_review_domains"
@@ -897,6 +994,63 @@ def test_pipeline_writes_domain_review_summary_artifact(tmp_path: Path) -> None:
 
     assert set(domain_review_summary["domain"]) == {"example.com", "blocked.example.com"}
     assert (output_dir / "domain_review_summary.xlsx").exists()
+
+
+def test_pipeline_writes_review_reason_summary_artifact(tmp_path: Path) -> None:
+    input_path = tmp_path / "review_reasons.csv"
+    output_dir = tmp_path / "out_review_reasons"
+    input_path.write_text(
+        "\n".join(
+            [
+                "incident_id,incident_date,state,city_or_county,address,victims_killed,victims_injured,suspects_killed,suspects_injured,suspects_arrested,incident_url,source_url",
+                "rr1,2024-01-10,TX,Austin,1 Main St,0,4,0,0,1,https://example.com/incidents/rr1,https://example.com/story-rr1",
+                "rr2,2024-01-11,TX,Austin,2 Main St,0,4,0,0,1,https://example.com/incidents/rr2,https://example.com/story-rr2",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    def fake_fetch(
+        source_url: str | None,
+        *,
+        session: requests.Session,
+        timeout_seconds: float,
+        store_raw_html: bool,
+    ) -> FetchResult:
+        if source_url and source_url.endswith("story-rr2"):
+            return FetchResult(
+                requested_url=source_url,
+                final_url=source_url,
+                status_code=404,
+                ok=False,
+                error="http_404",
+                article_text=None,
+                acquisition_status="permanent_not_found",
+                failure_stage="fetch",
+                failure_reason="http_404",
+                source_category="NEWS",
+            )
+        return FetchResult(
+            requested_url=source_url,
+            final_url=source_url,
+            status_code=200,
+            ok=True,
+            error=None,
+            article_text="Police said the shooting happened during a birthday party.",
+            source_category="NEWS",
+        )
+
+    run_pipeline(
+        input_path=input_path,
+        output_dir=output_dir,
+        write_excel_autofit=True,
+        fetch_fn=fake_fetch,
+    )
+
+    review_reason_summary = pd.read_csv(output_dir / "review_reason_summary.csv")
+
+    assert set(review_reason_summary["review_reason"]) == {"fetch_failed", "not_queued"}
+    assert (output_dir / "review_reason_summary.xlsx").exists()
 
 
 def test_pipeline_output_preserves_core_schema_and_adds_acquisition_fields(tmp_path: Path) -> None:
