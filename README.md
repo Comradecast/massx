@@ -137,6 +137,7 @@ The pipeline writes:
 - `domain_review_summary.csv`
 - `review_reason_summary.csv`
 - `run_quality_summary.csv`
+- `public_multi_victim_unclear_cases.csv`
 
 When `--excel-autofit` is enabled, it also writes `.xlsx` companions for each CSV output with Excel-friendly column widths. This is the closest automated equivalent to using `Alt`, `H`, `O`, `I` after opening the file in Excel. The CSV files themselves remain plain text and cannot store column widths.
 
@@ -203,6 +204,10 @@ Use this summary to distinguish acquisition pain from classification pain. High 
 `run_quality_summary.csv` is a one-row snapshot of the current run after final override application. It captures fetch success/failure totals, queue and review counts, source-override counts, and the final category counts for the main incident buckets.
 
 Use it as a lightweight drift check across repeated runs: if `fetch_failure_rate`, `unknown_category_rate`, `review_required_rate`, or one of the category counts moves unexpectedly, that is a quick signal that acquisition behavior, rule quality, or review load may have shifted.
+
+## Fallback Bucket Inspection
+
+`public_multi_victim_unclear_cases.csv` contains only final enriched rows where `category` is `public_multi_victim_unclear`. It is a simple inspection artifact, not a summary: use it to review the current fallback bucket manually and guide future rule design. The file is sorted by newest `incident_date`, then highest `victims_killed`, then highest `victims_injured`, then `incident_id`.
 
 ## Human Review Results
 

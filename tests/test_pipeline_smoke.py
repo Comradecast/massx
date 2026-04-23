@@ -12,6 +12,7 @@ import requests
 from gva_pipeline import cli
 from gva_pipeline.models import FetchResult
 from gva_pipeline.pipeline import (
+    _build_public_multi_victim_unclear_cases,
     _build_domain_review_summary,
     _build_human_review_queue,
     _build_run_quality_summary,
@@ -1085,6 +1086,103 @@ def test_run_quality_summary_aggregates_current_run_snapshot() -> None:
     assert abs(row["review_applied_rate"] - (3 / 11)) < 1e-9
 
 
+def test_public_multi_victim_unclear_cases_filter_schema_and_sort() -> None:
+    cases = _build_public_multi_victim_unclear_cases(
+        pd.DataFrame(
+            [
+                {
+                    "incident_id": "b2",
+                    "incident_date": "2024-01-03",
+                    "state": "TX",
+                    "city_or_county": "Austin",
+                    "victims_killed": 0,
+                    "victims_injured": 5,
+                    "source_domain": "example.com",
+                    "fetch_ok": True,
+                    "review_required": False,
+                    "review_reason": None,
+                    "category": "public_multi_victim_unclear",
+                    "category_confidence": 0.8,
+                    "category_rule": "public_multi_victim_fallback",
+                    "selected_source_url": "https://example.com/b2",
+                    "article_text": "Case b2",
+                },
+                {
+                    "incident_id": "a1",
+                    "incident_date": "2024-01-03",
+                    "state": "TX",
+                    "city_or_county": "Austin",
+                    "victims_killed": 1,
+                    "victims_injured": 4,
+                    "source_domain": "example.com",
+                    "fetch_ok": True,
+                    "review_required": True,
+                    "review_reason": "fetch_failed",
+                    "category": "public_multi_victim_unclear",
+                    "category_confidence": 0.8,
+                    "category_rule": "public_multi_victim_fallback",
+                    "selected_source_url": "https://example.com/a1",
+                    "article_text": "Case a1",
+                },
+                {
+                    "incident_id": "c3",
+                    "incident_date": "2024-01-02",
+                    "state": "LA",
+                    "city_or_county": "Baton Rouge",
+                    "victims_killed": 2,
+                    "victims_injured": 1,
+                    "source_domain": "news.example.com",
+                    "fetch_ok": False,
+                    "review_required": True,
+                    "review_reason": "fetch_failed",
+                    "category": "public_multi_victim_unclear",
+                    "category_confidence": 0.8,
+                    "category_rule": "public_multi_victim_fallback",
+                    "selected_source_url": "https://news.example.com/c3",
+                    "article_text": "Case c3",
+                },
+                {
+                    "incident_id": "z9",
+                    "incident_date": "2024-01-04",
+                    "state": "FL",
+                    "city_or_county": "Miami",
+                    "victims_killed": 0,
+                    "victims_injured": 4,
+                    "source_domain": "example.org",
+                    "fetch_ok": True,
+                    "review_required": False,
+                    "review_reason": None,
+                    "category": "public_space_nonrandom",
+                    "category_confidence": 0.78,
+                    "category_rule": "public_targeted_terms",
+                    "selected_source_url": "https://example.org/z9",
+                    "article_text": "Should be excluded",
+                },
+            ]
+        )
+    )
+
+    assert list(cases.columns) == [
+        "incident_id",
+        "incident_date",
+        "state",
+        "city_or_county",
+        "victims_killed",
+        "victims_injured",
+        "source_domain",
+        "fetch_ok",
+        "review_required",
+        "review_reason",
+        "category",
+        "category_confidence",
+        "category_rule",
+        "selected_source_url",
+        "article_text",
+    ]
+    assert list(cases["incident_id"]) == ["a1", "b2", "c3"]
+    assert set(cases["category"]) == {"public_multi_victim_unclear"}
+
+
 def test_pipeline_smoke_emits_public_event_gathering_category(tmp_path: Path) -> None:
     input_path = tmp_path / "public_event.csv"
     output_dir = tmp_path / "out_public_event"
@@ -1175,6 +1273,83 @@ def test_pipeline_multi_victim_fallback_reduces_unknowns(tmp_path: Path) -> None
 
     assert enriched.loc[0, "category"] == "public_multi_victim_unclear"
     assert enriched.loc[0, "category_rule"] == "public_multi_victim_fallback"
+
+
+def test_pipeline_writes_public_multi_victim_unclear_cases_artifact(tmp_path: Path) -> None:
+    input_path = tmp_path / "unclear_cases.csv"
+    output_dir = tmp_path / "out_unclear_cases"
+    input_path.write_text(
+        "\n".join(
+            [
+                "incident_id,incident_date,state,city_or_county,address,victims_killed,victims_injured,suspects_killed,suspects_injured,suspects_arrested,incident_url,source_url",
+                "u2,2024-01-11,TX,Austin,2 Main St,0,5,0,0,0,https://example.com/incidents/u2,https://example.com/story-u2",
+                "u1,2024-01-11,TX,Austin,1 Main St,1,4,0,0,0,https://example.com/incidents/u1,https://example.com/story-u1",
+                "u3,2024-01-10,LA,Baton Rouge,3 Main St,2,1,0,0,0,https://example.com/incidents/u3,https://example.com/story-u3",
+                "p1,2024-01-12,FL,Miami,4 Main St,0,4,0,0,0,https://example.com/incidents/p1,https://example.com/story-p1",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    def fake_fetch(
+        source_url: str | None,
+        *,
+        session: requests.Session,
+        timeout_seconds: float,
+        store_raw_html: bool,
+    ) -> FetchResult:
+        if source_url and source_url.endswith("story-p1"):
+            return FetchResult(
+                requested_url=source_url,
+                final_url=source_url,
+                status_code=200,
+                ok=True,
+                error=None,
+                article_text="Police said a car pulled up and opened fire from the vehicle.",
+                source_category="NEWS",
+            )
+        return FetchResult(
+            requested_url=source_url,
+            final_url=source_url,
+            status_code=200,
+            ok=True,
+            error=None,
+            article_text=(
+                "Police said multiple people were shot outdoors. "
+                "Investigators have not identified a clear motive or relationship among those involved."
+            ),
+            source_category="NEWS",
+        )
+
+    run_pipeline(
+        input_path=input_path,
+        output_dir=output_dir,
+        write_excel_autofit=True,
+        fetch_fn=fake_fetch,
+    )
+
+    cases = pd.read_csv(output_dir / "public_multi_victim_unclear_cases.csv")
+
+    assert list(cases.columns) == [
+        "incident_id",
+        "incident_date",
+        "state",
+        "city_or_county",
+        "victims_killed",
+        "victims_injured",
+        "source_domain",
+        "fetch_ok",
+        "review_required",
+        "review_reason",
+        "category",
+        "category_confidence",
+        "category_rule",
+        "selected_source_url",
+        "article_text",
+    ]
+    assert list(cases["incident_id"]) == ["u1", "u2", "u3"]
+    assert set(cases["category"]) == {"public_multi_victim_unclear"}
+    assert (output_dir / "public_multi_victim_unclear_cases.xlsx").exists()
 
 
 def test_pipeline_writes_domain_review_summary_artifact(tmp_path: Path) -> None:

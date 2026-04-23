@@ -418,6 +418,39 @@ def _build_human_review_queue(enriched_frame: pd.DataFrame) -> pd.DataFrame:
     return review_frame[review_columns].copy()
 
 
+def _build_public_multi_victim_unclear_cases(enriched_frame: pd.DataFrame) -> pd.DataFrame:
+    case_columns = [
+        "incident_id",
+        "incident_date",
+        "state",
+        "city_or_county",
+        "victims_killed",
+        "victims_injured",
+        "source_domain",
+        "fetch_ok",
+        "review_required",
+        "review_reason",
+        "category",
+        "category_confidence",
+        "category_rule",
+        "selected_source_url",
+        "article_text",
+    ]
+    case_frame = enriched_frame[enriched_frame["category"] == "public_multi_victim_unclear"].copy()
+    if case_frame.empty:
+        return pd.DataFrame(columns=case_columns)
+
+    case_frame["incident_date_sort"] = pd.to_datetime(case_frame["incident_date"], errors="coerce")
+    case_frame["victims_killed_sort"] = pd.to_numeric(case_frame["victims_killed"], errors="coerce").fillna(-1)
+    case_frame["victims_injured_sort"] = pd.to_numeric(case_frame["victims_injured"], errors="coerce").fillna(-1)
+    case_frame = case_frame.sort_values(
+        ["incident_date_sort", "victims_killed_sort", "victims_injured_sort", "incident_id"],
+        ascending=[False, False, False, True],
+        kind="stable",
+    ).drop(columns=["incident_date_sort", "victims_killed_sort", "victims_injured_sort"])
+    return case_frame[case_columns].copy()
+
+
 def _build_domain_fetch_summary(enriched_frame: pd.DataFrame) -> pd.DataFrame:
     working = enriched_frame.copy()
     working["source_domain"] = working["source_domain"].map(_normalize_source_domain)
@@ -1056,6 +1089,13 @@ def run_pipeline(
         output_directory,
         "run_quality_summary.csv",
         run_quality_summary,
+        write_excel_autofit=write_excel_autofit,
+    )
+    public_multi_victim_unclear_cases = _build_public_multi_victim_unclear_cases(enriched_frame)
+    _write_tabular_outputs(
+        output_directory,
+        "public_multi_victim_unclear_cases.csv",
+        public_multi_victim_unclear_cases,
         write_excel_autofit=write_excel_autofit,
     )
 
