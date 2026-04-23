@@ -107,6 +107,7 @@ class ContextFlags:
     mentions_domestic: bool = False
     mentions_bar_or_nightclub: bool = False
     mentions_school: bool = False
+    mentions_public_location: bool = False
     mentions_store_or_restaurant: bool = False
     mentions_drive_by: bool = False
     mentions_street_takeover: bool = False

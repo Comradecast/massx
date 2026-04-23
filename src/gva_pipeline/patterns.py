@@ -7,6 +7,15 @@ from typing import Final
 TEXT_WHITESPACE_RE: Final[re.Pattern[str]] = re.compile(r"\s+")
 SENTENCE_SPLIT_RE: Final[re.Pattern[str]] = re.compile(r"(?<=[.!?])\s+")
 
+EXPLICIT_SCHOOL_LOCATION_PATTERNS: Final[tuple[re.Pattern[str], ...]] = (
+    re.compile(r"\bon campus\b", re.IGNORECASE),
+    re.compile(r"\bschool grounds\b", re.IGNORECASE),
+    re.compile(r"\binside (?:a|the) school\b", re.IGNORECASE),
+    re.compile(r"\bat (?:a|the) school\b", re.IGNORECASE),
+    re.compile(r"\bin(?:side)? (?:a|the) classroom\b", re.IGNORECASE),
+    re.compile(r"\bin(?:side)? (?:a|the) dorm(?:itory)?\b", re.IGNORECASE),
+)
+
 CONTEXT_PATTERNS: Final[dict[str, tuple[re.Pattern[str], ...]]] = {
     "mentions_party": (
         re.compile(r"\bparty\b", re.IGNORECASE),
@@ -49,17 +58,17 @@ CONTEXT_PATTERNS: Final[dict[str, tuple[re.Pattern[str], ...]]] = {
         re.compile(r"\bkaraoke bar\b", re.IGNORECASE),
         re.compile(r"\bclub\b", re.IGNORECASE),
     ),
-    "mentions_school": (
-        re.compile(r"\bcampus\b", re.IGNORECASE),
-        re.compile(r"\buniversity campus\b", re.IGNORECASE),
-        re.compile(r"\bcollege campus\b", re.IGNORECASE),
-        re.compile(r"\bon campus\b", re.IGNORECASE),
-        re.compile(r"\bschool grounds\b", re.IGNORECASE),
-        re.compile(r"\bat (?:a|the) school\b", re.IGNORECASE),
-        re.compile(r"\binside (?:a|the) school\b", re.IGNORECASE),
-        re.compile(r"\boutside (?:a|the) school\b", re.IGNORECASE),
-        re.compile(r"\bdorm(?:itory)?\b", re.IGNORECASE),
-        re.compile(r"\bclassroom\b", re.IGNORECASE),
+    "mentions_school": EXPLICIT_SCHOOL_LOCATION_PATTERNS,
+    "mentions_public_location": (
+        re.compile(r"\bstreet\b", re.IGNORECASE),
+        re.compile(r"\bsidewalk\b", re.IGNORECASE),
+        re.compile(r"\bintersection\b", re.IGNORECASE),
+        re.compile(r"\bblock\b", re.IGNORECASE),
+        re.compile(r"\boutside\b", re.IGNORECASE),
+        re.compile(r"\bparking lot\b", re.IGNORECASE),
+        re.compile(r"\bgas station\b", re.IGNORECASE),
+        re.compile(r"\bin the area\b", re.IGNORECASE),
+        re.compile(r"\bnearby\b", re.IGNORECASE),
     ),
     "mentions_store_or_restaurant": (
         re.compile(r"\brestaurant\b", re.IGNORECASE),
@@ -78,6 +87,9 @@ CONTEXT_PATTERNS: Final[dict[str, tuple[re.Pattern[str], ...]]] = {
         re.compile(r"\bdrive by\b", re.IGNORECASE),
         re.compile(r"\bshot from (?:a|the) car\b", re.IGNORECASE),
         re.compile(r"\bfired from (?:a|the) vehicle\b", re.IGNORECASE),
+        re.compile(r"\bcar pulled up\b", re.IGNORECASE),
+        re.compile(r"\bopened fire from (?:a|the) vehicle\b", re.IGNORECASE),
+        re.compile(r"\bopened fire from vehicle\b", re.IGNORECASE),
     ),
     "mentions_street_takeover": (
         re.compile(r"\bstreet takeover\b", re.IGNORECASE),
@@ -137,6 +149,17 @@ CATEGORY_PATTERNS: Final[dict[str, tuple[re.Pattern[str], ...]]] = {
         re.compile(r"\bconfrontation\b", re.IGNORECASE),
         re.compile(r"\bafter exchanging words\b", re.IGNORECASE),
     ),
+    "public_event_gathering": (
+        re.compile(r"\bfestival\b", re.IGNORECASE),
+        re.compile(r"\bpublic event\b", re.IGNORECASE),
+        re.compile(r"\bcivic center event\b", re.IGNORECASE),
+        re.compile(r"\bbeach gathering\b", re.IGNORECASE),
+        re.compile(r"\boceanfront\b", re.IGNORECASE),
+        re.compile(r"\blarge crowd\b", re.IGNORECASE),
+        re.compile(r"\bcrowds? gathered\b", re.IGNORECASE),
+        re.compile(r"\bduring (?:a|the) event\b", re.IGNORECASE),
+        re.compile(r"\bat (?:a|the) event\b", re.IGNORECASE),
+    ),
     "gang_criminal_activity": (
         re.compile(r"\bgang[- ]related\b", re.IGNORECASE),
         re.compile(r"\bgang\b", re.IGNORECASE),
@@ -161,32 +184,28 @@ CATEGORY_PATTERNS: Final[dict[str, tuple[re.Pattern[str], ...]]] = {
         re.compile(r"\bstreet takeover\b", re.IGNORECASE),
     ),
     "workplace_business": (
-        re.compile(r"\bworkplace\b", re.IGNORECASE),
         re.compile(r"\bcoworker\b", re.IGNORECASE),
         re.compile(r"\bco-worker\b", re.IGNORECASE),
         re.compile(r"\bemployee\b", re.IGNORECASE),
-        re.compile(r"\bemployer\b", re.IGNORECASE),
-        re.compile(r"\bsupervisor\b", re.IGNORECASE),
-        re.compile(r"\bmanager\b", re.IGNORECASE),
-        re.compile(r"\boffice\b", re.IGNORECASE),
-        re.compile(r"\bwarehouse\b", re.IGNORECASE),
-        re.compile(r"\bbusiness\b", re.IGNORECASE),
-        re.compile(r"\bstore owner\b", re.IGNORECASE),
-        re.compile(r"\brestaurant worker\b", re.IGNORECASE),
+        re.compile(r"\bworkplace dispute\b", re.IGNORECASE),
+        re.compile(r"\bwhile working\b", re.IGNORECASE),
+        re.compile(r"\binside (?:a|the) (?:business|store|shop|office|warehouse|restaurant|barbershop)\b", re.IGNORECASE),
     ),
-    "school_campus": (
-        re.compile(r"\bcampus\b", re.IGNORECASE),
-        re.compile(r"\buniversity campus\b", re.IGNORECASE),
-        re.compile(r"\bcollege campus\b", re.IGNORECASE),
-        re.compile(r"\bon campus\b", re.IGNORECASE),
-        re.compile(r"\bschool grounds\b", re.IGNORECASE),
-        re.compile(r"\bat (?:a|the) school\b", re.IGNORECASE),
-        re.compile(r"\binside (?:a|the) school\b", re.IGNORECASE),
-        re.compile(r"\boutside (?:a|the) school\b", re.IGNORECASE),
-        re.compile(r"\bdorm(?:itory)?\b", re.IGNORECASE),
-        re.compile(r"\bclassroom\b", re.IGNORECASE),
-    ),
+    "school_campus": EXPLICIT_SCHOOL_LOCATION_PATTERNS,
 }
+
+PRIVATE_PARTY_PATTERNS: Final[tuple[re.Pattern[str], ...]] = (
+    re.compile(r"\bprivate party\b", re.IGNORECASE),
+    re.compile(r"\bhouse party\b", re.IGNORECASE),
+    re.compile(r"\bpool party\b", re.IGNORECASE),
+    re.compile(r"\bbirthday party\b", re.IGNORECASE),
+    re.compile(r"\bgraduation party\b", re.IGNORECASE),
+    re.compile(r"\bwedding reception\b", re.IGNORECASE),
+    re.compile(r"\bgathered at (?:a|the) residence\b", re.IGNORECASE),
+    re.compile(r"\bat (?:a|the) residence\b", re.IGNORECASE),
+    re.compile(r"\bat (?:his|her|their) home\b", re.IGNORECASE),
+    re.compile(r"\binside (?:a|the) home\b", re.IGNORECASE),
+)
 
 PUBLIC_TARGETING_PATTERNS: Final[tuple[re.Pattern[str], ...]] = (
     re.compile(r"\btargeted\b", re.IGNORECASE),

@@ -121,23 +121,42 @@ def test_near_business_does_not_trigger_workplace() -> None:
     assert result.category == "public_space_nonrandom"
 
 
-def test_multi_victim_street_shooting_classifies_as_public_multi_victim_unclear() -> None:
+def test_multi_victim_street_shooting_classifies_as_public_space_nonrandom() -> None:
     text = (
         "Police said gunfire erupted in the street, leaving several people wounded. "
         "Investigators have not identified any relationship between the victims and the shooter."
     )
     result = classify_incident(text, victims_killed=0, victims_injured=4)
-    assert result.category == "public_multi_victim_unclear"
-    assert result.matched_rule == "public_multi_victim_fallback"
+    assert result.category == "public_space_nonrandom"
+    assert result.matched_rule == "multi_victim_public_location_nonrandom"
 
 
-def test_group_shot_on_sidewalk_classifies_as_public_multi_victim_unclear() -> None:
+def test_group_shot_on_sidewalk_classifies_as_public_space_nonrandom() -> None:
     text = (
-        "Four people were shot outdoors when gunfire broke out late Saturday. "
+        "Four people were shot on the sidewalk when gunfire broke out late Saturday. "
         "Police said no clear motive or relationship among those involved has been identified."
     )
     result = classify_incident(text, victims_killed=0, victims_injured=4)
+    assert result.category == "public_space_nonrandom"
+
+
+def test_gas_station_shooting_classifies_as_public_space_nonrandom() -> None:
+    text = (
+        "Police said five people were shot at a gas station late Saturday night. "
+        "Investigators said they have not identified a motive or relationship among those involved."
+    )
+    result = classify_incident(text, victims_killed=0, victims_injured=5)
+    assert result.category == "public_space_nonrandom"
+
+
+def test_thin_multi_victim_article_still_classifies_as_public_multi_victim_unclear() -> None:
+    text = (
+        "Police said multiple people were shot late Saturday night. "
+        "Investigators have not identified a clear motive or relationship among those involved."
+    )
+    result = classify_incident(text, victims_killed=0, victims_injured=4)
     assert result.category == "public_multi_victim_unclear"
+    assert result.matched_rule == "public_multi_victim_fallback"
 
 
 def test_school_adjacent_words_without_explicit_location_do_not_trigger_school_campus() -> None:

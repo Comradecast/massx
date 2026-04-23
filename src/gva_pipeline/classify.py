@@ -29,6 +29,7 @@ def extract_context_flags(text: str) -> ContextFlags:
         mentions_domestic=bool(_find_matches(normalized, CONTEXT_PATTERNS["mentions_domestic"])),
         mentions_bar_or_nightclub=bool(_find_matches(normalized, CONTEXT_PATTERNS["mentions_bar_or_nightclub"])),
         mentions_school=bool(_find_matches(normalized, CONTEXT_PATTERNS["mentions_school"])),
+        mentions_public_location=bool(_find_matches(normalized, CONTEXT_PATTERNS["mentions_public_location"])),
         mentions_store_or_restaurant=bool(_find_matches(normalized, CONTEXT_PATTERNS["mentions_store_or_restaurant"])),
         mentions_drive_by=bool(_find_matches(normalized, CONTEXT_PATTERNS["mentions_drive_by"])),
         mentions_street_takeover=bool(_find_matches(normalized, CONTEXT_PATTERNS["mentions_street_takeover"])),
@@ -118,6 +119,22 @@ def classify_incident(
     if public_matches or context.mentions_street_takeover or context.mentions_store_or_restaurant:
         explanation = "Matched public-facing location indicators without a stronger category."
         return ClassificationResult("public_space_nonrandom", 0.68, "public_location_terms", explanation)
+
+    if (
+        total_victims >= 3
+        and context.mentions_public_location
+        and not context.mentions_domestic
+        and not context.mentions_party
+        and not context.mentions_school
+        and not context.mentions_bar_or_nightclub
+        and not public_event_matches
+    ):
+        return ClassificationResult(
+            "public_space_nonrandom",
+            0.8,
+            "multi_victim_public_location_nonrandom",
+            "Multi-victim public incident with deterministic public-location signals and no stronger contextual signals",
+        )
 
     if (
         total_victims >= 3
