@@ -7,7 +7,6 @@ import time
 from typing import Callable
 
 import pandas as pd
-from openpyxl.utils import get_column_letter
 
 from .classify import classify_incident, extract_context_flags
 from .demographics import extract_suspect_demographics
@@ -56,6 +55,14 @@ def _excel_display_length(value: object) -> int:
 
 
 def _write_excel_with_autofit(frame: pd.DataFrame, output_path: Path, *, sheet_name: str = "Sheet1") -> None:
+    try:
+        from openpyxl.utils import get_column_letter
+    except ImportError as exc:
+        raise RuntimeError(
+            "Excel auto-fit output requires the optional 'openpyxl' dependency. "
+            "Install the excel extra or dev requirements before using --excel-autofit."
+        ) from exc
+
     with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
         frame.to_excel(writer, index=False, sheet_name=sheet_name)
         worksheet = writer.sheets[sheet_name]
@@ -116,7 +123,12 @@ def _record_to_output(
 ) -> dict[str, object]:
     fetch_result = acquisition_result.fetch_result
     context_flags = extract_context_flags(article_text)
-    classification = classify_incident(article_text, context_flags)
+    classification = classify_incident(
+        article_text,
+        context_flags,
+        victims_killed=incident.victims_killed,
+        victims_injured=incident.victims_injured,
+    )
     demographics = extract_suspect_demographics(article_text)
     acquisition_status, failure_stage, failure_reason = _coalesce_failure_metadata(fetch_result)
     selected_source_url = acquisition_result.selected_source_url
@@ -324,6 +336,7 @@ def _build_review_metadata(row: dict[str, object]) -> dict[str, object]:
         category_review_reasons.append("rule_conflict_school_context")
     if mentions_party and not (mentions_domestic and category == "domestic_family") and category not in {
         "party_social_event",
+        "public_event_gathering",
         "school_campus",
     }:
         category_review_reasons.append("rule_conflict_party_context")
@@ -684,6 +697,8 @@ def _build_run_quality_summary(enriched_frame: pd.DataFrame) -> pd.DataFrame:
         "domestic_family_count": int(category_counts.get("domestic_family", 0)),
         "school_campus_count": int(category_counts.get("school_campus", 0)),
         "party_social_event_count": int(category_counts.get("party_social_event", 0)),
+        "public_event_gathering_count": int(category_counts.get("public_event_gathering", 0)),
+        "public_multi_victim_unclear_count": int(category_counts.get("public_multi_victim_unclear", 0)),
         "workplace_business_count": int(category_counts.get("workplace_business", 0)),
         "nightlife_bar_district_count": int(category_counts.get("nightlife_bar_district", 0)),
         "public_space_count": int(category_counts.get("public_space", 0)),
@@ -709,6 +724,8 @@ def _build_run_quality_summary(enriched_frame: pd.DataFrame) -> pd.DataFrame:
             "domestic_family_count",
             "school_campus_count",
             "party_social_event_count",
+            "public_event_gathering_count",
+            "public_multi_victim_unclear_count",
             "workplace_business_count",
             "nightlife_bar_district_count",
             "public_space_count",

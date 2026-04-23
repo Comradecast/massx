@@ -4,7 +4,7 @@ from typing import Iterable
 
 from .io_utils import normalize_whitespace
 from .models import ClassificationResult, ContextFlags
-from .patterns import CATEGORY_PATTERNS, CONTEXT_PATTERNS, PUBLIC_TARGETING_PATTERNS
+from .patterns import CATEGORY_PATTERNS, CONTEXT_PATTERNS, PRIVATE_PARTY_PATTERNS, PUBLIC_TARGETING_PATTERNS
 
 
 def _find_matches(text: str, patterns: Iterable[object]) -> list[str]:
@@ -15,6 +15,10 @@ def _find_matches(text: str, patterns: Iterable[object]) -> list[str]:
             if value and value.lower() not in {item.lower() for item in matches}:
                 matches.append(value)
     return matches
+
+
+def _coerce_count(value: int | None) -> int:
+    return value if isinstance(value, int) and value > 0 else 0
 
 
 def extract_context_flags(text: str) -> ContextFlags:
@@ -32,9 +36,18 @@ def extract_context_flags(text: str) -> ContextFlags:
     )
 
 
-def classify_incident(text: str, context_flags: ContextFlags | None = None) -> ClassificationResult:
+def classify_incident(
+    text: str,
+    context_flags: ContextFlags | None = None,
+    *,
+    victims_killed: int | None = None,
+    victims_injured: int | None = None,
+) -> ClassificationResult:
     normalized = normalize_whitespace(text)
     context = context_flags or extract_context_flags(normalized)
+    workplace_matches = _find_matches(normalized, CATEGORY_PATTERNS["workplace_business"])
+    private_party_matches = _find_matches(normalized, PRIVATE_PARTY_PATTERNS)
+    total_victims = _coerce_count(victims_killed) + _coerce_count(victims_injured)
 
     domestic_strong = _find_matches(normalized, CATEGORY_PATTERNS["domestic_strong"])
     if domestic_strong:
@@ -50,9 +63,27 @@ def classify_incident(text: str, context_flags: ContextFlags | None = None) -> C
         explanation = f"Matched school/campus setting: {', '.join((school_matches or ['school/campus context'])[:3])}"
         return ClassificationResult("school_campus", 0.95, "school_context", explanation)
 
-    workplace_matches = _find_matches(normalized, CATEGORY_PATTERNS["workplace_business"])
+    drive_by_matches = _find_matches(normalized, CONTEXT_PATTERNS["mentions_drive_by"])
+    if drive_by_matches or context.mentions_drive_by:
+        explanation = (
+            "Matched drive-by or vehicle-fire language; treated as a targeted public-space incident: "
+            f"{', '.join((drive_by_matches or ['drive-by context'])[:3])}"
+        )
+        return ClassificationResult("public_space_nonrandom", 0.91, "drive_by_public_nonrandom", explanation)
+
+    public_event_matches = _find_matches(normalized, CATEGORY_PATTERNS["public_event_gathering"])
+    if (
+        public_event_matches
+        and not context.mentions_domestic
+        and not context.mentions_bar_or_nightclub
+        and not private_party_matches
+        and not workplace_matches
+    ):
+        explanation = f"Matched public event or gathering language: {', '.join(public_event_matches[:3])}"
+        return ClassificationResult("public_event_gathering", 0.86, "public_event_terms", explanation)
+
     if workplace_matches:
-        explanation = f"Matched workplace/business indicators: {', '.join(workplace_matches[:3])}"
+        explanation = f"Matched explicit workplace indicators: {', '.join(workplace_matches[:3])}"
         return ClassificationResult("workplace_business", 0.92, "workplace_terms", explanation)
 
     nightlife_matches = _find_matches(normalized, CATEGORY_PATTERNS["nightlife_bar_district"])
@@ -69,10 +100,6 @@ def classify_incident(text: str, context_flags: ContextFlags | None = None) -> C
     if gang_matches:
         explanation = f"Matched gang/criminal-activity language: {', '.join(gang_matches[:3])}"
         return ClassificationResult("gang_criminal_activity", 0.9, "gang_or_criminal_terms", explanation)
-
-    if context.mentions_drive_by:
-        explanation = "Matched drive-by language; treated as likely public targeted or criminal activity context."
-        return ClassificationResult("gang_criminal_activity", 0.82, "drive_by_context", explanation)
 
     dispute_matches = _find_matches(normalized, CATEGORY_PATTERNS["interpersonal_dispute"])
     if dispute_matches or context.mentions_argument:
@@ -91,6 +118,22 @@ def classify_incident(text: str, context_flags: ContextFlags | None = None) -> C
     if public_matches or context.mentions_street_takeover or context.mentions_store_or_restaurant:
         explanation = "Matched public-facing location indicators without a stronger category."
         return ClassificationResult("public_space_nonrandom", 0.68, "public_location_terms", explanation)
+
+    if (
+        total_victims >= 3
+        and not context.mentions_domestic
+        and not context.mentions_party
+        and not context.mentions_school
+        and not context.mentions_bar_or_nightclub
+        and not context.mentions_store_or_restaurant
+        and not workplace_matches
+    ):
+        return ClassificationResult(
+            "public_multi_victim_unclear",
+            0.8,
+            "public_multi_victim_fallback",
+            "Multi-victim public incident with no stronger contextual signals",
+        )
 
     return ClassificationResult(
         "unknown",

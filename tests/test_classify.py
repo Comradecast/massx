@@ -72,3 +72,78 @@ def test_clear_domestic_family_case_does_not_regress() -> None:
     )
     result = classify_incident(text)
     assert result.category == "domestic_family"
+
+
+def test_public_event_gathering_classification() -> None:
+    text = (
+        "Police said gunfire erupted during a public event at the civic center. "
+        "A large crowd ran for cover as officers secured the area."
+    )
+    result = classify_incident(text)
+    assert result.category == "public_event_gathering"
+    assert result.matched_rule == "public_event_terms"
+
+
+def test_festival_shooting_classifies_correctly() -> None:
+    text = (
+        "Investigators said the shooting happened during a festival downtown. "
+        "Crowds gathered near the stage before the gunfire started."
+    )
+    result = classify_incident(text)
+    assert result.category == "public_event_gathering"
+
+
+def test_oceanfront_shooting_classifies_correctly() -> None:
+    text = (
+        "Officers said the shooting happened along the oceanfront during a beach gathering. "
+        "Witnesses described a large crowd in the area."
+    )
+    result = classify_incident(text)
+    assert result.category == "public_event_gathering"
+
+
+def test_drive_by_overrides_workplace_false_positive() -> None:
+    text = (
+        "Police said an employee was standing outside the store when a car pulled up. "
+        "Someone opened fire from the vehicle before speeding away."
+    )
+    result = classify_incident(text)
+    assert result.category == "public_space_nonrandom"
+    assert result.matched_rule == "drive_by_public_nonrandom"
+
+
+def test_near_business_does_not_trigger_workplace() -> None:
+    text = (
+        "Police said the shooting happened on a sidewalk near a business district and around several stores. "
+        "Investigators do not believe anyone involved was working at the time."
+    )
+    result = classify_incident(text)
+    assert result.category == "public_space_nonrandom"
+
+
+def test_multi_victim_street_shooting_classifies_as_public_multi_victim_unclear() -> None:
+    text = (
+        "Police said gunfire erupted in the street, leaving several people wounded. "
+        "Investigators have not identified any relationship between the victims and the shooter."
+    )
+    result = classify_incident(text, victims_killed=0, victims_injured=4)
+    assert result.category == "public_multi_victim_unclear"
+    assert result.matched_rule == "public_multi_victim_fallback"
+
+
+def test_group_shot_on_sidewalk_classifies_as_public_multi_victim_unclear() -> None:
+    text = (
+        "Four people were shot outdoors when gunfire broke out late Saturday. "
+        "Police said no clear motive or relationship among those involved has been identified."
+    )
+    result = classify_incident(text, victims_killed=0, victims_injured=4)
+    assert result.category == "public_multi_victim_unclear"
+
+
+def test_school_adjacent_words_without_explicit_location_do_not_trigger_school_campus() -> None:
+    text = (
+        "Police said high school students were injured after prom at a house party. "
+        "Investigators said the shooting happened at a private home, not on school property."
+    )
+    result = classify_incident(text)
+    assert result.category != "school_campus"

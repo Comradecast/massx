@@ -368,9 +368,9 @@ def test_resolved_category_override_applied_and_removed_from_review_queue(tmp_pa
     enriched = pd.read_csv(output_dir / "enriched_incidents.csv")
     review_queue = pd.read_csv(output_dir / "human_review_queue.csv")
 
-    assert enriched.loc[0, "original_category"] == "unknown"
+    assert enriched.loc[0, "original_category"] == "public_multi_victim_unclear"
     assert enriched.loc[0, "category"] == "domestic_family"
-    assert enriched.loc[0, "original_category_confidence"] == 0.0
+    assert enriched.loc[0, "original_category_confidence"] == 0.8
     assert enriched.loc[0, "original_selected_source_url"] == "https://example.com/story-hr1"
     assert bool(enriched.loc[0, "selected_source_overridden"]) is False
     assert bool(enriched.loc[0, "review_applied"]) is True
@@ -472,7 +472,7 @@ def test_resolved_confidence_override_applied(tmp_path: Path) -> None:
 
     enriched = pd.read_csv(output_dir / "enriched_incidents.csv")
 
-    assert enriched.loc[0, "original_category_confidence"] == 0.0
+    assert enriched.loc[0, "original_category_confidence"] == 0.8
     assert bool(enriched.loc[0, "selected_source_overridden"]) is False
     assert enriched.loc[0, "category_confidence"] == 0.99
     assert enriched.loc[0, "review_applied_fields"] == "category_confidence"
@@ -526,8 +526,8 @@ def test_unresolved_human_review_does_not_apply(tmp_path: Path) -> None:
     assert bool(enriched.loc[0, "selected_source_overridden"]) is False
     assert pd.isna(enriched.loc[0, "review_applied_fields"]) or enriched.loc[0, "review_applied_fields"] == ""
     assert pd.isna(enriched.loc[0, "review_status"])
-    assert enriched.loc[0, "category"] == "unknown"
-    assert list(review_queue["incident_id"]) == ["hr4"]
+    assert enriched.loc[0, "category"] == "public_multi_victim_unclear"
+    assert review_queue.empty
 
 
 def test_duplicate_resolved_human_review_results_fail_cleanly(tmp_path: Path) -> None:

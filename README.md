@@ -31,8 +31,13 @@ The pipeline:
 ```bash
 python -m venv .venv
 .venv\Scripts\activate
+python -m pip install -r requirements-dev.txt
+```
+
+For a lean runtime-only install, use:
+
+```bash
 python -m pip install -r requirements.txt
-python -m pip install -e .
 ```
 
 ## Usage
@@ -244,9 +249,11 @@ Reviewer workflow tips:
 
 - `domestic_family`
 - `party_social_event`
+- `public_event_gathering`
 - `nightlife_bar_district`
 - `interpersonal_dispute`
 - `gang_criminal_activity`
+- `public_multi_victim_unclear`
 - `public_space_nonrandom`
 - `workplace_business`
 - `school_campus`
@@ -258,7 +265,13 @@ Each classification includes:
 - the matched rule name
 - a human-readable explanation
 
-School and party context is interpreted conservatively: `school_campus` now requires explicit school-location language such as `school`, `campus`, `on campus`, or `school grounds`, while student-only or prom-related context at a private residence is treated as party/social context unless a stronger rule applies.
+Category notes:
+
+- `public_event_gathering` is used for large public gatherings with explicit public-event language, such as `festival`, `public event`, `civic center event`, `oceanfront`, `beach gathering`, or a large crowd at an event. It sits below `domestic_family` and `school_campus`, and above generic public-space fallback rules.
+- `workplace_business` is intentionally strict. It now requires explicit workplace indicators such as `employee`, `coworker`, `workplace dispute`, `inside a business/store`, or `while working`. Mentions like `near a business`, `outside a barbershop`, `around stores`, or other general commercial-area wording do not trigger the workplace category by themselves.
+- Drive-by and vehicle-fire language such as `drive-by`, `car pulled up`, or `opened fire from vehicle` is routed to `public_space_nonrandom` before weaker workplace-style matches.
+- `school_campus` is intentionally narrow. It requires explicit location phrases such as `on campus`, `school grounds`, `inside the school`, `at the school`, `in a classroom`, or `in a dorm`. Student-only wording like `high school students`, `university`, or `after prom` does not trigger `school_campus` on its own.
+- When no stronger context fires, incidents with at least three victims killed/injured are deterministically classified as `public_multi_victim_unclear` with the rule `public_multi_victim_fallback`. This keeps the fallback bucket separate from stronger `public_space_nonrandom` signals while still reducing `unknown` classifications without using fuzzy logic or ML.
 
 ## Sample Smoke-Test Dataset
 

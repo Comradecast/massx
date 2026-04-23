@@ -590,14 +590,18 @@ def test_human_review_queue_includes_only_flagged_rows(tmp_path: Path) -> None:
     enriched = pd.read_csv(output_dir / "enriched_incidents.csv")
     domain_summary = pd.read_csv(output_dir / "domain_fetch_summary.csv")
 
-    assert set(review_queue["incident_id"]) == {"r2", "r3"}
-    assert set(enriched.loc[enriched["review_required"], "incident_id"]) == {"r2", "r3"}
+    assert set(review_queue["incident_id"]) == {"r3"}
+    assert set(enriched.loc[enriched["review_required"], "incident_id"]) == {"r3"}
     assert "r1" not in set(review_queue["incident_id"])
+    r2_row = enriched.loc[enriched["incident_id"] == "r2"].iloc[0]
+    assert r2_row["category"] == "public_multi_victim_unclear"
+    assert r2_row["category_rule"] == "public_multi_victim_fallback"
+    r3_row = enriched.loc[enriched["incident_id"] == "r3"].iloc[0]
+    assert r3_row["category"] == "public_multi_victim_unclear"
+    assert r3_row["category_rule"] == "public_multi_victim_fallback"
     reasons = dict(zip(review_queue["incident_id"], review_queue["review_reason"]))
-    assert reasons["r2"] == "unknown_category"
     assert reasons["r3"] == "fetch_failed"
     priorities = dict(zip(review_queue["incident_id"], review_queue["review_priority"]))
-    assert priorities["r2"] == 80
     assert priorities["r3"] == 100
     flags = {
         row["incident_id"]: (
@@ -606,8 +610,7 @@ def test_human_review_queue_includes_only_flagged_rows(tmp_path: Path) -> None:
         )
         for row in review_queue.to_dict(orient="records")
     }
-    assert flags["r2"] == (True, False)
-    assert flags["r3"] == (True, True)
+    assert flags["r3"] == (False, True)
 
     domains = dict(zip(enriched["incident_id"], enriched["source_domain"]))
     assert domains["r1"] == "example.com"
@@ -1003,7 +1006,7 @@ def test_run_quality_summary_aggregates_current_run_snapshot() -> None:
                     "review_required": False,
                     "review_applied": False,
                     "selected_source_overridden": False,
-                    "category": "nightlife_bar_district",
+                    "category": "public_event_gathering",
                 },
                 {
                     "incident_id": "6",
@@ -1011,7 +1014,7 @@ def test_run_quality_summary_aggregates_current_run_snapshot() -> None:
                     "review_required": False,
                     "review_applied": False,
                     "selected_source_overridden": False,
-                    "category": "public_space",
+                    "category": "nightlife_bar_district",
                 },
                 {
                     "incident_id": "7",
@@ -1019,7 +1022,7 @@ def test_run_quality_summary_aggregates_current_run_snapshot() -> None:
                     "review_required": False,
                     "review_applied": False,
                     "selected_source_overridden": False,
-                    "category": "public_space_nonrandom",
+                    "category": "public_space",
                 },
                 {
                     "incident_id": "8",
@@ -1027,10 +1030,26 @@ def test_run_quality_summary_aggregates_current_run_snapshot() -> None:
                     "review_required": False,
                     "review_applied": False,
                     "selected_source_overridden": False,
-                    "category": "interpersonal_dispute",
+                    "category": "public_space_nonrandom",
                 },
                 {
                     "incident_id": "9",
+                    "fetch_ok": True,
+                    "review_required": False,
+                    "review_applied": False,
+                    "selected_source_overridden": False,
+                    "category": "public_multi_victim_unclear",
+                },
+                {
+                    "incident_id": "10",
+                    "fetch_ok": True,
+                    "review_required": False,
+                    "review_applied": False,
+                    "selected_source_overridden": False,
+                    "category": "interpersonal_dispute",
+                },
+                {
+                    "incident_id": "11",
                     "fetch_ok": True,
                     "review_required": True,
                     "review_applied": True,
@@ -1043,8 +1062,8 @@ def test_run_quality_summary_aggregates_current_run_snapshot() -> None:
 
     assert len(summary.index) == 1
     row = summary.iloc[0]
-    assert row["total_incidents"] == 9
-    assert row["fetch_success_count"] == 8
+    assert row["total_incidents"] == 11
+    assert row["fetch_success_count"] == 10
     assert row["fetch_failure_count"] == 1
     assert row["unknown_category_count"] == 1
     assert row["review_required_count"] == 3
@@ -1053,15 +1072,109 @@ def test_run_quality_summary_aggregates_current_run_snapshot() -> None:
     assert row["domestic_family_count"] == 1
     assert row["school_campus_count"] == 1
     assert row["party_social_event_count"] == 1
+    assert row["public_event_gathering_count"] == 1
+    assert row["public_multi_victim_unclear_count"] == 1
     assert row["workplace_business_count"] == 1
     assert row["nightlife_bar_district_count"] == 1
     assert row["public_space_count"] == 1
     assert row["public_space_nonrandom_count"] == 1
     assert row["interpersonal_dispute_count"] == 1
-    assert abs(row["fetch_failure_rate"] - (1 / 9)) < 1e-9
-    assert abs(row["unknown_category_rate"] - (1 / 9)) < 1e-9
-    assert abs(row["review_required_rate"] - (3 / 9)) < 1e-9
-    assert abs(row["review_applied_rate"] - (3 / 9)) < 1e-9
+    assert abs(row["fetch_failure_rate"] - (1 / 11)) < 1e-9
+    assert abs(row["unknown_category_rate"] - (1 / 11)) < 1e-9
+    assert abs(row["review_required_rate"] - (3 / 11)) < 1e-9
+    assert abs(row["review_applied_rate"] - (3 / 11)) < 1e-9
+
+
+def test_pipeline_smoke_emits_public_event_gathering_category(tmp_path: Path) -> None:
+    input_path = tmp_path / "public_event.csv"
+    output_dir = tmp_path / "out_public_event"
+    input_path.write_text(
+        "\n".join(
+            [
+                "incident_id,incident_date,state,city_or_county,address,victims_killed,victims_injured,suspects_killed,suspects_injured,suspects_arrested,incident_url,source_url",
+                "pe1,2024-07-04,VA,Virginia Beach,100 Boardwalk,0,4,0,0,0,https://example.com/incidents/pe1,https://example.com/story-pe1",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    def fake_fetch(
+        source_url: str | None,
+        *,
+        session: requests.Session,
+        timeout_seconds: float,
+        store_raw_html: bool,
+    ) -> FetchResult:
+        return FetchResult(
+            requested_url=source_url,
+            final_url=source_url,
+            status_code=200,
+            ok=True,
+            error=None,
+            article_text=(
+                "Police said the shooting happened along the oceanfront during a public event. "
+                "A large crowd scattered across the boardwalk."
+            ),
+            raw_html=None,
+        )
+
+    run_pipeline(
+        input_path=input_path,
+        output_dir=output_dir,
+        fetch_fn=fake_fetch,
+    )
+
+    enriched = pd.read_csv(output_dir / "enriched_incidents.csv")
+    run_quality_summary = pd.read_csv(output_dir / "run_quality_summary.csv")
+
+    assert enriched.loc[0, "category"] == "public_event_gathering"
+    assert enriched.loc[0, "category_rule"] == "public_event_terms"
+    assert run_quality_summary.loc[0, "public_event_gathering_count"] == 1
+
+
+def test_pipeline_multi_victim_fallback_reduces_unknowns(tmp_path: Path) -> None:
+    input_path = tmp_path / "multi_victim.csv"
+    output_dir = tmp_path / "out_multi_victim"
+    input_path.write_text(
+        "\n".join(
+            [
+                "incident_id,incident_date,state,city_or_county,address,victims_killed,victims_injured,suspects_killed,suspects_injured,suspects_arrested,incident_url,source_url",
+                "mv1,2024-07-04,TX,Dallas,100 Main St,0,4,0,0,0,https://example.com/incidents/mv1,https://example.com/story-mv1",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    def fake_fetch(
+        source_url: str | None,
+        *,
+        session: requests.Session,
+        timeout_seconds: float,
+        store_raw_html: bool,
+    ) -> FetchResult:
+        return FetchResult(
+            requested_url=source_url,
+            final_url=source_url,
+            status_code=200,
+            ok=True,
+            error=None,
+            article_text=(
+                "Police said gunfire wounded multiple people late Saturday night. "
+                "Investigators have not identified a clear motive or relationship among those involved."
+            ),
+            raw_html=None,
+        )
+
+    run_pipeline(
+        input_path=input_path,
+        output_dir=output_dir,
+        fetch_fn=fake_fetch,
+    )
+
+    enriched = pd.read_csv(output_dir / "enriched_incidents.csv")
+
+    assert enriched.loc[0, "category"] == "public_multi_victim_unclear"
+    assert enriched.loc[0, "category_rule"] == "public_multi_victim_fallback"
 
 
 def test_pipeline_writes_domain_review_summary_artifact(tmp_path: Path) -> None:
