@@ -14,6 +14,7 @@ from .fetch import build_session, fetch_source, save_raw_html
 from .io_utils import (
     deduplicate_incidents_frame,
     ensure_directory,
+    extract_provenance_snippet,
     frame_to_incident_records,
     read_incidents_csv,
     serialize_value,
@@ -449,6 +450,84 @@ def _build_public_multi_victim_unclear_cases(enriched_frame: pd.DataFrame) -> pd
         kind="stable",
     ).drop(columns=["incident_date_sort", "victims_killed_sort", "victims_injured_sort"])
     return case_frame[case_columns].copy()
+
+
+def _build_public_multi_victim_unclear_with_text_cases(enriched_frame: pd.DataFrame) -> pd.DataFrame:
+    case_columns = [
+        "incident_id",
+        "incident_date",
+        "state",
+        "city_or_county",
+        "victims_killed",
+        "victims_injured",
+        "source_domain",
+        "fetch_ok",
+        "review_required",
+        "review_reason",
+        "category",
+        "category_confidence",
+        "category_rule",
+        "selected_source_url",
+        "article_text",
+    ]
+    case_frame = enriched_frame[
+        (enriched_frame["category"] == "public_multi_victim_unclear")
+        & (pd.to_numeric(enriched_frame["article_text_length"], errors="coerce").fillna(0) > 0)
+    ].copy()
+    if case_frame.empty:
+        return pd.DataFrame(columns=case_columns)
+
+    case_frame["incident_date_sort"] = pd.to_datetime(case_frame["incident_date"], errors="coerce")
+    case_frame["victims_killed_sort"] = pd.to_numeric(case_frame["victims_killed"], errors="coerce").fillna(-1)
+    case_frame["victims_injured_sort"] = pd.to_numeric(case_frame["victims_injured"], errors="coerce").fillna(-1)
+    case_frame = case_frame.sort_values(
+        ["incident_date_sort", "victims_killed_sort", "victims_injured_sort", "incident_id"],
+        ascending=[False, False, False, True],
+        kind="stable",
+    ).drop(columns=["incident_date_sort", "victims_killed_sort", "victims_injured_sort"])
+    return case_frame[case_columns].copy()
+
+
+def _build_public_multi_victim_unclear_notes_template(enriched_frame: pd.DataFrame) -> pd.DataFrame:
+    note_columns = [
+        "incident_id",
+        "incident_date",
+        "state",
+        "city_or_county",
+        "victims_killed",
+        "victims_injured",
+        "source_domain",
+        "category",
+        "category_rule",
+        "selected_source_url",
+        "article_text_snippet",
+        "analyst_cluster_guess",
+        "analyst_notes",
+    ]
+    source_frame = _build_public_multi_victim_unclear_with_text_cases(enriched_frame)
+    if source_frame.empty:
+        return pd.DataFrame(columns=note_columns)
+
+    notes_frame = source_frame[
+        [
+            "incident_id",
+            "incident_date",
+            "state",
+            "city_or_county",
+            "victims_killed",
+            "victims_injured",
+            "source_domain",
+            "category",
+            "category_rule",
+            "selected_source_url",
+        ]
+    ].copy()
+    notes_frame["article_text_snippet"] = source_frame["article_text"].map(
+        lambda text: extract_provenance_snippet(str(text or ""), 0, 0)
+    )
+    notes_frame["analyst_cluster_guess"] = ""
+    notes_frame["analyst_notes"] = ""
+    return notes_frame[note_columns].copy()
 
 
 def _build_domain_fetch_summary(enriched_frame: pd.DataFrame) -> pd.DataFrame:
@@ -1096,6 +1175,24 @@ def run_pipeline(
         output_directory,
         "public_multi_victim_unclear_cases.csv",
         public_multi_victim_unclear_cases,
+        write_excel_autofit=write_excel_autofit,
+    )
+    public_multi_victim_unclear_with_text_cases = _build_public_multi_victim_unclear_with_text_cases(
+        enriched_frame
+    )
+    _write_tabular_outputs(
+        output_directory,
+        "public_multi_victim_unclear_with_text_cases.csv",
+        public_multi_victim_unclear_with_text_cases,
+        write_excel_autofit=write_excel_autofit,
+    )
+    public_multi_victim_unclear_notes_template = _build_public_multi_victim_unclear_notes_template(
+        enriched_frame
+    )
+    _write_tabular_outputs(
+        output_directory,
+        "public_multi_victim_unclear_notes_template.csv",
+        public_multi_victim_unclear_notes_template,
         write_excel_autofit=write_excel_autofit,
     )
 

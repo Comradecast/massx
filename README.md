@@ -138,6 +138,7 @@ The pipeline writes:
 - `review_reason_summary.csv`
 - `run_quality_summary.csv`
 - `public_multi_victim_unclear_cases.csv`
+- `public_multi_victim_unclear_notes_template.csv`
 
 When `--excel-autofit` is enabled, it also writes `.xlsx` companions for each CSV output with Excel-friendly column widths. This is the closest automated equivalent to using `Alt`, `H`, `O`, `I` after opening the file in Excel. The CSV files themselves remain plain text and cannot store column widths.
 
@@ -208,6 +209,8 @@ Use it as a lightweight drift check across repeated runs: if `fetch_failure_rate
 ## Fallback Bucket Inspection
 
 `public_multi_victim_unclear_cases.csv` contains only final enriched rows where `category` is `public_multi_victim_unclear`. It is a simple inspection artifact, not a summary: use it to review the current fallback bucket manually and guide future rule design. The file is sorted by newest `incident_date`, then highest `victims_killed`, then highest `victims_injured`, then `incident_id`.
+
+`public_multi_victim_unclear_notes_template.csv` is a manual clustering worksheet built from the `public_multi_victim_unclear_with_text_cases.csv` rows only. It keeps the same sort order, adds a deterministic `article_text_snippet`, and leaves `analyst_cluster_guess` plus `analyst_notes` blank so the remaining fallback bucket can be reviewed by hand before any new rule design.
 
 ## Human Review Results
 

@@ -10,9 +10,11 @@ import pytest
 import requests
 
 from gva_pipeline import cli
+from gva_pipeline.io_utils import extract_provenance_snippet
 from gva_pipeline.models import FetchResult
 from gva_pipeline.pipeline import (
     _build_public_multi_victim_unclear_cases,
+    _build_public_multi_victim_unclear_notes_template,
     _build_public_multi_victim_unclear_with_text_cases,
     _build_domain_review_summary,
     _build_human_review_queue,
@@ -1285,6 +1287,109 @@ def test_public_multi_victim_unclear_with_text_cases_filter_schema_and_sort() ->
     assert set(cases["category"]) == {"public_multi_victim_unclear"}
 
 
+def test_public_multi_victim_unclear_notes_template_schema_blank_columns_and_sort() -> None:
+    enriched_frame = pd.DataFrame(
+        [
+            {
+                "incident_id": "b2",
+                "incident_date": "2024-01-03",
+                "state": "TX",
+                "city_or_county": "Austin",
+                "victims_killed": 0,
+                "victims_injured": 5,
+                "source_domain": "example.com",
+                "fetch_ok": True,
+                "review_required": False,
+                "review_reason": None,
+                "category": "public_multi_victim_unclear",
+                "category_confidence": 0.8,
+                "category_rule": "public_multi_victim_fallback",
+                "selected_source_url": "https://example.com/b2",
+                "article_text": "Case b2",
+                "article_text_length": 7,
+            },
+            {
+                "incident_id": "a1",
+                "incident_date": "2024-01-03",
+                "state": "TX",
+                "city_or_county": "Austin",
+                "victims_killed": 1,
+                "victims_injured": 4,
+                "source_domain": "example.com",
+                "fetch_ok": True,
+                "review_required": True,
+                "review_reason": "fetch_failed",
+                "category": "public_multi_victim_unclear",
+                "category_confidence": 0.8,
+                "category_rule": "public_multi_victim_fallback",
+                "selected_source_url": "https://example.com/a1",
+                "article_text": "Case a1 " + ("detail " * 40),
+                "article_text_length": 288,
+            },
+            {
+                "incident_id": "c3",
+                "incident_date": "2024-01-02",
+                "state": "LA",
+                "city_or_county": "Baton Rouge",
+                "victims_killed": 2,
+                "victims_injured": 1,
+                "source_domain": "news.example.com",
+                "fetch_ok": False,
+                "review_required": True,
+                "review_reason": "fetch_failed",
+                "category": "public_multi_victim_unclear",
+                "category_confidence": 0.8,
+                "category_rule": "public_multi_victim_fallback",
+                "selected_source_url": "https://news.example.com/c3",
+                "article_text": "",
+                "article_text_length": 0,
+            },
+            {
+                "incident_id": "z9",
+                "incident_date": "2024-01-04",
+                "state": "FL",
+                "city_or_county": "Miami",
+                "victims_killed": 0,
+                "victims_injured": 4,
+                "source_domain": "example.org",
+                "fetch_ok": True,
+                "review_required": False,
+                "review_reason": None,
+                "category": "public_space_nonrandom",
+                "category_confidence": 0.78,
+                "category_rule": "public_targeted_terms",
+                "selected_source_url": "https://example.org/z9",
+                "article_text": "Should be excluded",
+                "article_text_length": 18,
+            },
+        ]
+    )
+    with_text_cases = _build_public_multi_victim_unclear_with_text_cases(enriched_frame)
+    notes = _build_public_multi_victim_unclear_notes_template(enriched_frame)
+
+    assert list(notes.columns) == [
+        "incident_id",
+        "incident_date",
+        "state",
+        "city_or_county",
+        "victims_killed",
+        "victims_injured",
+        "source_domain",
+        "category",
+        "category_rule",
+        "selected_source_url",
+        "article_text_snippet",
+        "analyst_cluster_guess",
+        "analyst_notes",
+    ]
+    assert list(notes["incident_id"]) == list(with_text_cases["incident_id"]) == ["a1", "b2"]
+    assert list(notes["analyst_cluster_guess"]) == ["", ""]
+    assert list(notes["analyst_notes"]) == ["", ""]
+    assert notes.loc[0, "article_text_snippet"] == extract_provenance_snippet(
+        str(with_text_cases.loc[0, "article_text"]), 0, 0
+    )
+
+
 def test_pipeline_smoke_emits_public_event_gathering_category(tmp_path: Path) -> None:
     input_path = tmp_path / "public_event.csv"
     output_dir = tmp_path / "out_public_event"
@@ -1587,6 +1692,102 @@ def test_pipeline_writes_public_multi_victim_unclear_with_text_cases_artifact(tm
     assert list(cases["incident_id"]) == ["u1", "u2"]
     assert set(cases["category"]) == {"public_multi_victim_unclear"}
     assert (output_dir / "public_multi_victim_unclear_with_text_cases.xlsx").exists()
+
+
+def test_pipeline_writes_public_multi_victim_unclear_notes_template_artifact(tmp_path: Path) -> None:
+    input_path = tmp_path / "unclear_notes_template.csv"
+    output_dir = tmp_path / "out_unclear_notes_template"
+    input_path.write_text(
+        "\n".join(
+            [
+                "incident_id,incident_date,state,city_or_county,address,victims_killed,victims_injured,suspects_killed,suspects_injured,suspects_arrested,incident_url,source_url",
+                "u2,2024-01-11,TX,Austin,2 Main St,0,5,0,0,0,https://example.com/incidents/u2,https://example.com/story-u2",
+                "u1,2024-01-11,TX,Austin,1 Main St,1,4,0,0,0,https://example.com/incidents/u1,https://example.com/story-u1",
+                "u3,2024-01-10,LA,Baton Rouge,3 Main St,2,1,0,0,0,https://example.com/incidents/u3,https://example.com/story-u3",
+                "p1,2024-01-12,FL,Miami,4 Main St,0,4,0,0,0,https://example.com/incidents/p1,https://example.com/story-p1",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    def fake_fetch(
+        source_url: str | None,
+        *,
+        session: requests.Session,
+        timeout_seconds: float,
+        store_raw_html: bool,
+    ) -> FetchResult:
+        if source_url and source_url.endswith("story-p1"):
+            return FetchResult(
+                requested_url=source_url,
+                final_url=source_url,
+                status_code=200,
+                ok=True,
+                error=None,
+                article_text="Police said a car pulled up and opened fire from the vehicle.",
+                source_category="NEWS",
+            )
+        if source_url and source_url.endswith("story-u3"):
+            return FetchResult(
+                requested_url=source_url,
+                final_url=source_url,
+                status_code=404,
+                ok=False,
+                error="http_404",
+                article_text=None,
+                acquisition_status="permanent_not_found",
+                failure_stage="fetch",
+                failure_reason="http_404",
+                source_category="NEWS",
+            )
+        return FetchResult(
+            requested_url=source_url,
+            final_url=source_url,
+            status_code=200,
+            ok=True,
+            error=None,
+            article_text=(
+                "Police said multiple people were shot outdoors. "
+                "Investigators have not identified a clear motive or relationship among those involved."
+            ),
+            source_category="NEWS",
+        )
+
+    run_pipeline(
+        input_path=input_path,
+        output_dir=output_dir,
+        write_excel_autofit=True,
+        fetch_fn=fake_fetch,
+    )
+
+    with_text_cases = pd.read_csv(
+        output_dir / "public_multi_victim_unclear_with_text_cases.csv",
+        keep_default_na=False,
+    )
+    notes = pd.read_csv(
+        output_dir / "public_multi_victim_unclear_notes_template.csv",
+        keep_default_na=False,
+    )
+
+    assert list(notes.columns) == [
+        "incident_id",
+        "incident_date",
+        "state",
+        "city_or_county",
+        "victims_killed",
+        "victims_injured",
+        "source_domain",
+        "category",
+        "category_rule",
+        "selected_source_url",
+        "article_text_snippet",
+        "analyst_cluster_guess",
+        "analyst_notes",
+    ]
+    assert list(notes["incident_id"]) == list(with_text_cases["incident_id"]) == ["u1", "u2"]
+    assert list(notes["analyst_cluster_guess"]) == ["", ""]
+    assert list(notes["analyst_notes"]) == ["", ""]
+    assert (output_dir / "public_multi_victim_unclear_notes_template.xlsx").exists()
 
 
 def test_pipeline_writes_domain_review_summary_artifact(tmp_path: Path) -> None:
